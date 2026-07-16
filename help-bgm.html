@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BGM 使い方ガイド — GM ツール</title>
+  <style>
+    :root {
+      --ground:    #0d0d1a;
+      --surface:   #14142a;
+      --surface-2: #1c1c38;
+      --surface-3: #252548;
+      --text:      #e2e2f0;
+      --text-dim:  #8888aa;
+      --text-faint:#3a3a58;
+      --accent:    #c84b6e;
+      --accent-d:  rgba(200,75,110,.13);
+      --green:     #3ecf8e;
+      --green-d:   rgba(62,207,142,.11);
+      --yellow:    #f5a623;
+      --yellow-d:  rgba(245,166,35,.10);
+      --red:       #e05252;
+      --border:    #2a2a50;
+      --border-h:  #3a3a60;
+      --r:         8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+      background: var(--ground);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 210px 1fr;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 28px 0 40px;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      padding: 0 20px 22px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 18px;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+      margin-bottom: 14px;
+      transition: color .15s;
+    }
+    .back-link:hover { color: var(--accent); }
+    .sidebar-title {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      font-family: 'Courier New', monospace;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .sidebar-title strong {
+      display: block;
+      font-size: 15px;
+      letter-spacing: 0;
+      color: var(--text);
+      margin-top: 4px;
+      text-transform: none;
+    }
+    .nav-group {
+      padding: 14px 20px 5px;
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      font-family: 'Courier New', monospace;
+      color: var(--text-faint);
+    }
+    .sidebar-nav a {
+      display: block;
+      padding: 7px 12px 7px 20px;
+      font-size: 13px;
+      color: var(--text-dim);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      transition: all .14s;
+      line-height: 1.4;
+    }
+    .sidebar-nav a:hover { color: var(--text); background: var(--surface-2); }
+    .sidebar-nav a.active {
+      color: var(--text);
+      border-left-color: var(--accent);
+      background: var(--accent-d);
+    }
+
+    /* ── Main ── */
+    .content {
+      padding: 52px 68px 80px;
+      max-width: 860px;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      margin-bottom: 64px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero-eye {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-eye::after {
+      content: '';
+      flex: 1;
+      max-width: 60px;
+      height: 1px;
+      background: var(--border);
+    }
+    .hero h1 {
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1.12;
+      letter-spacing: -0.5px;
+      margin-bottom: 16px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .hero-lead {
+      font-size: 15px;
+      color: var(--text-dim);
+      max-width: 500px;
+      line-height: 1.85;
+    }
+
+    /* ── Section ── */
+    .section {
+      margin-bottom: 76px;
+      scroll-margin-top: 28px;
+    }
+    .section-eye {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .section > h2 {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: 18px;
+    }
+    .section > p {
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    /* ── Inline UI labels ── */
+    .ui {
+      display: inline-block;
+      font-family: 'Courier New', monospace;
+      font-size: .82em;
+      padding: 1px 8px 2px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      white-space: nowrap;
+      color: var(--text);
+      line-height: 1.7;
+      vertical-align: baseline;
+    }
+    .ui.green { border-color: rgba(62,207,142,.35); color: var(--green); background: var(--green-d); }
+    .ui.yellow { border-color: rgba(245,166,35,.35); color: var(--yellow); background: var(--yellow-d); }
+    .ui.red { border-color: rgba(224,82,82,.35); color: var(--red); background: rgba(224,82,82,.08); }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 20px 22px;
+    }
+    .card + .card { margin-top: 10px; }
+    .card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 9px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.75;
+      margin-bottom: 8px;
+    }
+    .card p:last-child { margin-bottom: 0; }
+    .card.ok   { border-color: rgba(62,207,142,.25); background: var(--green-d); }
+    .card.warn { border-color: rgba(245,166,35,.25); background: var(--yellow-d); }
+
+    /* ── Two-column ── */
+    .col2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    /* ── Step list ── */
+    .steps {
+      list-style: none;
+      margin: 18px 0;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      counter-reset: step;
+    }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+    .steps li:last-child { border-bottom: none; }
+    .steps li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-d);
+      border: 1px solid rgba(200,75,110,.28);
+      border-radius: 50%;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      color: var(--accent);
+      margin-top: 1px;
+    }
+    .steps li strong { color: var(--text); }
+
+    /* ── Loop toggle visual ── */
+    .loop-demo {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    .loop-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      border-radius: var(--r);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      flex: 1;
+    }
+    .loop-pill.on { border-color: rgba(62,207,142,.35); background: var(--green-d); }
+    .loop-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      flex-shrink: 0;
+    }
+    .loop-pill.on .loop-btn { border-color: var(--green); background: rgba(62,207,142,.15); }
+    .loop-pill-text { font-size: 13px; }
+    .loop-pill-text strong { display: block; font-size: 12px; margin-bottom: 2px; }
+    .loop-pill-text span { font-size: 12px; color: var(--text-dim); }
+
+    /* ── Transition mode cards ── */
+    .modes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 22px 0;
+    }
+    .mode-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 16px 16px 14px;
+    }
+    .mode-card.m-stop  { border-top: 2px solid var(--red); }
+    .mode-card.m-fade  { border-top: 2px solid var(--yellow); }
+    .mode-card.m-cross { border-top: 2px solid var(--green); }
+    .mode-icon { font-size: 22px; margin-bottom: 8px; display: block; }
+    .mode-name { font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.3; }
+    .mode-desc { font-size: 12px; color: var(--text-dim); line-height: 1.65; }
+
+    /* ── Interactive demo ── */
+    .demo-box {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      margin: 24px 0;
+    }
+    .demo-head {
+      padding: 10px 18px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-head::before {
+      content: '';
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+    }
+    .demo-inner { padding: 20px; }
+    #demo-canvas {
+      width: 100%;
+      height: 140px;
+      display: block;
+      background: var(--surface-2);
+      border-radius: 6px;
+      margin-bottom: 14px;
+    }
+    .demo-status {
+      display: flex;
+      gap: 24px;
+      padding: 9px 14px;
+      background: var(--surface-2);
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+    .demo-status .st { display: flex; align-items: center; gap: 8px; }
+    .st-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      transition: background .3s, box-shadow .3s;
+      flex-shrink: 0;
+    }
+    .st-dot.on-play  { background: var(--green);  box-shadow: 0 0 7px var(--green); }
+    .st-dot.on-fade  { background: var(--yellow); box-shadow: 0 0 7px var(--yellow); }
+    .st-dot.on-stop  { background: var(--red); }
+    .st-lbl { color: var(--text-dim); }
+    .demo-btns { display: flex; gap: 8px; }
+    .demo-btn {
+      flex: 1;
+      padding: 10px 10px 9px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all .14s;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .demo-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-h); }
+    .demo-btn.act { border-color: var(--accent); color: var(--accent); background: var(--accent-d); }
+    .demo-btn .di { display: block; font-size: 17px; margin-bottom: 2px; }
+
+    /* ── Phase behavior list ── */
+    .beh-list {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .beh-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+    .beh-row:last-child { border-bottom: none; }
+    .beh-key {
+      padding: 14px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--surface-2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.5;
+    }
+    .beh-val {
+      padding: 14px 18px;
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.75;
+    }
+
+    /* ── Now playing visual ── */
+    .np-mock {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(62,207,142,.07);
+      border: 1px solid rgba(62,207,142,.22);
+      border-radius: var(--r);
+      padding: 11px 16px;
+      margin: 18px 0;
+    }
+    .np-bars { display: flex; align-items: flex-end; gap: 2px; height: 18px; flex-shrink: 0; }
+    .np-bar {
+      width: 3px; background: var(--green); border-radius: 1.5px;
+      transform-origin: bottom;
+      animation: npviz .8s ease-in-out infinite;
+    }
+    .np-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
+    .np-bar:nth-child(2) { height: 14px; animation-delay: .18s; }
+    .np-bar:nth-child(3) { height: 6px; animation-delay: .36s; }
+    @keyframes npviz { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(1.7); } }
+    @media (prefers-reduced-motion: reduce) { .np-bar { animation: none; } }
+    .np-name { flex: 1; font-size: 13px; color: var(--green); }
+    .np-controls { display: flex; gap: 6px; font-size: 12px; }
+    .np-btn {
+      padding: 4px 10px;
+      border-radius: 5px;
+      border: 1px solid;
+      font-size: 11px;
+      cursor: default;
+    }
+    .np-btn.y { border-color: rgba(245,166,35,.4); color: var(--yellow); background: rgba(245,166,35,.08); }
+    .np-btn.r { border-color: rgba(224,82,82,.4); color: var(--red); background: rgba(224,82,82,.08); }
+
+    /* ── Code block ── */
+    .code-block {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 13px 18px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: var(--green);
+      margin: 12px 0;
+      overflow-x: auto;
+    }
+
+    /* ── Step guide ── */
+    .sg-step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 20px; }
+    .sg-num {
+      flex-shrink: 0;
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent-d); border: 1px solid rgba(200,75,110,.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-family: 'Courier New', monospace; color: var(--accent);
+    }
+    .sg-body { flex: 1; min-width: 0; }
+    .sg-body > p { font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
+    .sg-body > p strong { color: var(--text); }
+    .sg-arrow { text-align: center; color: var(--accent); font-size: 22px; margin: 0 0 14px; }
+
+    /* Mock UI components */
+    .ui-mock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; margin-bottom: 4px; }
+    .ui-mock-hd {
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+      padding: 8px 14px; display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text-dim); flex-wrap: wrap;
+    }
+    .ui-mock-hd strong { color: var(--text); font-size: 13px; }
+    .ui-mock-body { padding: 14px 16px; }
+    .mock-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 11px; border-radius: 5px; font-size: 11px;
+      border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--text); white-space: nowrap;
+    }
+    .mock-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .mock-btn.dim     { color: var(--text-dim); }
+    .hl-ring {
+      outline: 2px solid var(--red); outline-offset: 2px; border-radius: 5px;
+      animation: hlpulse 2s ease-in-out infinite;
+    }
+    @keyframes hlpulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(224,82,82,.4); }
+      50%      { box-shadow: 0 0 0 5px rgba(224,82,82,0); }
+    }
+    .ph-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px;
+    }
+    .ph-item:last-child { border-bottom: none; }
+    .ph-item .num  { color: var(--text-dim); width: 18px; text-align: center; font-family: 'Courier New', monospace; font-size: 11px; }
+    .ph-item .name { flex: 1; }
+    .ph-item .dur  { color: var(--text-dim); font-size: 11px; margin-right: 4px; }
+    .form-field { margin-bottom: 12px; }
+    .form-field label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 5px; font-family: 'Courier New', monospace; }
+    .form-field label.acc { color: var(--accent); }
+    .form-input-mock  { padding: 6px 10px; background: var(--ground); border: 1px solid var(--border); border-radius: 5px; font-size: 12px; color: var(--text); display: inline-block; }
+    .form-input-mock.full { width: 100%; }
+    .form-select-mock { width: 100%; padding: 7px 10px; background: var(--ground); border: 2px solid var(--accent); border-radius: 5px; font-size: 12px; color: var(--text); box-shadow: 0 0 0 3px rgba(200,75,110,.1); }
+
+    /* Comparison grid */
+    .cmp2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+    .cmp2-card { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .cmp2-hd { padding: 9px 14px; font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--border); }
+    .cmp2-hd.g { background: var(--green-d); border-bottom-color: rgba(62,207,142,.25); color: var(--green); }
+    .cmp2-hd.a { background: var(--accent-d); border-bottom-color: rgba(200,75,110,.2); color: var(--accent); }
+    .cmp2-body { padding: 12px 14px; background: var(--surface); }
+    .cmp2-body p { font-size: 12px; color: var(--text-dim); margin-bottom: 7px; }
+    .cmp2-body p:last-child { margin-bottom: 0; }
+
+    /* ── Responsive ── */
+    @media (max-width: 820px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; }
+      .content { padding: 28px 20px 60px; }
+      .col2 { grid-template-columns: 1fr; }
+      .modes { grid-template-columns: 1fr; }
+      .beh-row { grid-template-columns: 1fr; }
+      .beh-key { border-right: none; border-bottom: 1px solid var(--border); }
+      .hero h1 { font-size: 30px; }
+      .cmp2 { grid-template-columns: 1fr; }
+      .ui-mock-hd { gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ─── Sidebar ─── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html" class="back-link">← GM ツールに戻る</a>
+      <div class="sidebar-title">
+        GM ツール
+        <strong>BGM ガイド</strong>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group">基本操作</div>
+      <a href="#add-track">トラックを追加する</a>
+      <a href="#loop">ループ設定</a>
+      <div class="nav-group">音の切り替え</div>
+      <a href="#transition">切替挙動</a>
+      <a href="#phase-change">フェイズ切り替え</a>
+      <div class="nav-group">リファレンス</div>
+      <a href="#now-playing">Now Playing バー</a>
+      <a href="#trouble">トラブルシューティング</a>
+    </nav>
+  </aside>
+
+  <!-- ─── Content ─── -->
+  <main class="content">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-eye">GM ツール — BGM システム</div>
+      <h1>BGM の<em>使い方</em></h1>
+      <p class="hero-lead">フェイズごとに複数のBGMトラックを登録し、曲の切り替え方法とフェイズ遷移時の動作を細かく制御できます。</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────
+         Section 1: トラックを追加する
+    ───────────────────────────────────────── -->
+    <section class="section" id="add-track">
+      <div class="section-eye">基本操作 — トラック追加</div>
+      <h2>トラックを追加する</h2>
+      <p>BGMはフェイズごとに何曲でも登録できます。追加経路は2つあります。</p>
+
+      <div class="col2">
+        <div class="card">
+          <h3>📋 フェイズ設定から追加</h3>
+          <p>セッション前の準備向け。ループや切替挙動も一緒に設定できます。</p>
+          <ol class="steps" style="margin-top:12px">
+            <li><strong>⚙ 設定</strong> → フェイズ一覧 → <strong>編集</strong> を開く</li>
+            <li>「BGM トラック」欄の <span class="ui">＋ BGMを追加</span> をクリック</li>
+            <li>Drive ファイル一覧からファイルを選択して保存</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>⚡ メインパネルから即追加</h3>
+          <p>セッション中に素早く追加したいとき。BGMパネルから直接Driveを開けます。</p>
+          <ol class="steps" style="margin-top:12px">
+            <li>フェイズタブでフェイズを選択する</li>
+            <li>BGMパネルの <span class="ui">＋ BGMを追加…</span> をクリック</li>
+            <li>ファイルを選択すると即座に追加・反映される</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="card warn">
+        <h3>⚠ Google Drive 接続が必要</h3>
+        <p>BGMを追加・再生するには先に <strong>⚙ 設定 → Google Drive タブ</strong> から接続してください。Client ID が未入力だとファイル一覧が表示されません。</p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         Section 2: ループ設定
+    ───────────────────────────────────────── -->
+    <section class="section" id="loop">
+      <div class="section-eye">基本操作 — ループ</div>
+      <h2>ループ設定</h2>
+      <p>各トラックの <span class="ui">🔄</span> ボタンでループのON/OFFを切り替えます。設定はクリックと同時に保存されます。</p>
+
+      <div class="loop-demo">
+        <div class="loop-pill on">
+          <div class="loop-btn">🔄</div>
+          <div class="loop-pill-text">
+            <strong>ループ ON（緑・デフォルト）</strong>
+            <span>曲末尾に達すると先頭に戻って再生し続けます。BGMとして流しっぱなしにするときに使います。</span>
+          </div>
+        </div>
+        <div class="loop-pill">
+          <div class="loop-btn">🔄</div>
+          <div class="loop-pill-text">
+            <strong>ループ OFF（暗い）</strong>
+            <span>1回再生すると停止します。Now Playing バーが消えます。演出用の一発鳴らしに。</span>
+          </div>
+        </div>
+      </div>
+
+      <p>再生中にループを切り替えた場合、次のループポイントから反映されます。</p>
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         Section 3: 切替挙動（メインコンテンツ）
+    ───────────────────────────────────────── -->
+    <section class="section" id="transition">
+      <div class="section-eye">音の切り替え — 切替挙動</div>
+      <h2>切替挙動</h2>
+      <p>BGM が再生中に別のトラックを再生するとき、元の曲（A）をどう止めるかを<strong>トラックごと</strong>に設定します。これは「新しく再生する曲 B 側」の設定です。</p>
+
+      <div class="modes">
+        <div class="mode-card m-stop">
+          <span class="mode-icon">⚡</span>
+          <div class="mode-name">即停止 → 再生</div>
+          <p class="mode-desc">A を瞬時に停止し、B をすぐ再生。場面転換などシャープな切り替えに。</p>
+        </div>
+        <div class="mode-card m-fade">
+          <span class="mode-icon">↓</span>
+          <div class="mode-name">フェード → 再生</div>
+          <p class="mode-desc">A をフェードアウトし、消えてから B を再生。違和感のない自然な切り替えのデフォルト。</p>
+        </div>
+        <div class="mode-card m-cross">
+          <span class="mode-icon">⇌</span>
+          <div class="mode-name">クロスフェード</div>
+          <p class="mode-desc">A のフェードアウトと B のフェードインを同時に行う。BGM が途切れない切り替えに。</p>
+        </div>
+      </div>
+
+      <!-- Interactive Demo -->
+      <div class="demo-box">
+        <div class="demo-head">インタラクティブデモ — ボタンをクリックして動作を確認</div>
+        <div class="demo-inner">
+          <canvas id="demo-canvas"></canvas>
+          <div class="demo-status">
+            <div class="st">
+              <div class="st-dot on-play" id="dot-a"></div>
+              <span class="st-lbl" id="lbl-a">Track A — 再生中</span>
+            </div>
+            <div class="st">
+              <div class="st-dot" id="dot-b"></div>
+              <span class="st-lbl" id="lbl-b">Track B — 待機中</span>
+            </div>
+          </div>
+          <div class="demo-btns">
+            <button class="demo-btn" id="dbtn-stop" onclick="runDemo('stop')">
+              <span class="di">⚡</span>即停止 → 再生
+            </button>
+            <button class="demo-btn" id="dbtn-fade" onclick="runDemo('fade')">
+              <span class="di">↓</span>フェード → 再生
+            </button>
+            <button class="demo-btn" id="dbtn-cross" onclick="runDemo('cross')">
+              <span class="di">⇌</span>クロスフェード
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p>切替挙動は各トラックカードの右側にある小さいセレクト（<span class="ui">⚡ 即</span> <span class="ui">↓ フェード</span> <span class="ui">⇌ クロス</span>）で変更します。選択は即座に保存されます。</p>
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         Section 4: フェイズ切り替え時の動作
+    ───────────────────────────────────────── -->
+    <section class="section" id="phase-change">
+      <div class="section-eye">音の切り替え — フェイズ遷移</div>
+      <h2>フェイズ切り替え時の動作</h2>
+      <p>フェイズタブを切り替えたとき、再生中の BGM をどう扱うかを<strong>フェイズごと</strong>に設定します。設定は <strong>フェイズ編集モーダル</strong> の中にあります。以下の手順でたどってください。</p>
+
+      <!-- ── Step-by-step guide ── -->
+      <div style="margin:24px 0 36px">
+
+        <!-- Step 1 -->
+        <div class="sg-step">
+          <div class="sg-num">1</div>
+          <div class="sg-body">
+            <p>画面右上の <strong>⚙ 設定</strong> ボタンをクリックします</p>
+            <div class="ui-mock">
+              <div class="ui-mock-hd">
+                <strong>🎭 GM ツール</strong>
+                <span style="flex:1;font-size:11px;color:var(--text-faint)">シナリオ名</span>
+                <span class="mock-btn dim">📺 タイマー画面</span>
+                <span class="mock-btn hl-ring" style="margin:0 4px">⚙ 設定</span>
+                <span class="mock-btn dim">? ヘルプ</span>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ ヘッダー右上の <span class="ui">⚙ 設定</span> をクリック</div>
+          </div>
+        </div>
+
+        <div class="sg-arrow">↓</div>
+
+        <!-- Step 2 -->
+        <div class="sg-step">
+          <div class="sg-num">2</div>
+          <div class="sg-body">
+            <p>設定モーダルが開いたら「<strong>シナリオ</strong>」タブのフェイズ一覧から、BGM設定を変えたいフェイズの <strong>編集</strong> をクリックします</p>
+            <div class="ui-mock">
+              <div class="ui-mock-hd">⚙ 設定</div>
+              <div class="ui-mock-body" style="padding:12px 14px">
+                <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px">
+                  <div style="padding:6px 14px;font-size:12px;color:var(--accent);border-bottom:2px solid var(--accent)">シナリオ</div>
+                  <div style="padding:6px 14px;font-size:12px;color:var(--text-dim)">Google Drive</div>
+                </div>
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;font-family:'Courier New',monospace;color:var(--text-dim);margin-bottom:8px">フェイズ一覧</div>
+                <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
+                  <div class="ph-item">
+                    <span class="num">1</span>
+                    <span class="name">オープニング</span>
+                    <span class="dur">10分</span>
+                    <span class="mock-btn dim" style="font-size:10px;padding:3px 8px">編集</span>
+                  </div>
+                  <div class="ph-item" style="background:var(--accent-d)">
+                    <span class="num" style="color:var(--accent)">2</span>
+                    <span class="name" style="color:var(--accent);font-weight:600">調査フェイズ</span>
+                    <span class="dur">15分</span>
+                    <span class="mock-btn primary hl-ring" style="font-size:10px;padding:3px 8px">編集</span>
+                  </div>
+                  <div class="ph-item">
+                    <span class="num">3</span>
+                    <span class="name">議論フェイズ</span>
+                    <span class="dur">10分</span>
+                    <span class="mock-btn dim" style="font-size:10px;padding:3px 8px">編集</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ 設定したいフェイズの <span class="ui">編集</span> ボタンをクリック</div>
+          </div>
+        </div>
+
+        <div class="sg-arrow">↓</div>
+
+        <!-- Step 3 -->
+        <div class="sg-step">
+          <div class="sg-num">3</div>
+          <div class="sg-body">
+            <p>フェイズ編集モーダルが開きます。<strong>下にスクロール</strong>して「<strong>このフェイズに切り替えたときの動作</strong>」を見つけ、動作モードを選択して <strong>保存</strong> します</p>
+            <div class="ui-mock">
+              <div class="ui-mock-hd">フェイズを編集 — 調査フェイズ</div>
+              <div class="ui-mock-body">
+                <div class="form-field">
+                  <label>フェイズ名</label>
+                  <div class="form-input-mock full">調査フェイズ</div>
+                </div>
+                <div class="form-field">
+                  <label>タイマー時間</label>
+                  <div class="form-input-mock" style="width:46px;text-align:center">15</div>
+                  <span style="font-size:12px;color:var(--text-dim)"> 分 　</span>
+                  <div class="form-input-mock" style="width:46px;text-align:center">0</div>
+                  <span style="font-size:12px;color:var(--text-dim)"> 秒</span>
+                </div>
+                <!-- Highlighted target field -->
+                <div style="border:2px solid var(--accent);border-radius:var(--r);padding:14px;background:var(--ground);box-shadow:0 0 0 3px rgba(200,75,110,.1)">
+                  <div class="form-field" style="margin-bottom:12px">
+                    <label class="acc">このフェイズに切り替えたときの動作 ← ここを設定！</label>
+                    <select class="form-select-mock" style="pointer-events:none">
+                      <option>↓ フェイドアウト → BGMを自動演奏</option>
+                    </select>
+                  </div>
+                  <div class="form-field" style="margin-bottom:0">
+                    <label class="acc">自動演奏するBGM</label>
+                    <select class="form-select-mock" style="pointer-events:none">
+                      <option>1. 調査BGM.mp3</option>
+                    </select>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:5px">「自動演奏」モードを選ぶとこの項目が表示されます</div>
+                  </div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+                  <span class="mock-btn dim">キャンセル</span>
+                  <span class="mock-btn primary">保存</span>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ 赤枠内で動作を選び、<span class="ui">保存</span> をクリック</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 4 modes ── -->
+      <div class="section-eye" style="margin-bottom:10px">4つの動作モード</div>
+      <div class="beh-list">
+        <div class="beh-row">
+          <div class="beh-key">🔊 再生を維持</div>
+          <div class="beh-val">再生中の BGM はそのまま続きます。切り替え先のフェイズでも Now Playing バーから操作できます。複数フェイズにまたがる長いBGMに向いています。</div>
+        </div>
+        <div class="beh-row">
+          <div class="beh-key">↓ フェイドアウト</div>
+          <div class="beh-val">フェイズ切り替えと同時に BGM がフェードアウトして停止します。次のフェイズで BGM を手動で選ぶ場合に使います。</div>
+        </div>
+        <div class="beh-row">
+          <div class="beh-key">↓ フェイドアウト<br>＋ 自動演奏</div>
+          <div class="beh-val">フェードアウト完了後、「自動演奏するBGM」欄で指定したトラックを自動再生します。フェイズ開始と同時に音楽が切り替わる演出に。フェイズにBGMが登録されていると設定可能になります。</div>
+        </div>
+        <div class="beh-row">
+          <div class="beh-key">⚡ 即停止<br>＋ 自動演奏</div>
+          <div class="beh-val">即座に停止し、指定トラックをすぐ再生します。テンポの速い場面転換や、次のBGMをすぐ出したいときに。</div>
+        </div>
+      </div>
+
+      <div class="card ok" style="margin-top:12px">
+        <h3>💡 自動演奏トラックの指定</h3>
+        <p>「フェイドアウト＋自動演奏」または「即停止＋自動演奏」を選ぶと、「自動演奏するBGM」のセレクトボックスが表示されます。フェイズに登録済みのトラックから1つ選んでください。</p>
+      </div>
+
+      <!-- ── Two settings difference ── -->
+      <div style="margin-top:40px">
+        <div class="section-eye" style="margin-bottom:12px">よくある混乱 — 2つの設定の違い</div>
+        <p>BGMに関する設定が<strong>2か所</strong>あります。それぞれ別のことを制御しています。</p>
+        <div class="cmp2">
+          <div class="cmp2-card">
+            <div class="cmp2-hd g">🔀 フェイズをまたぐ切り替え</div>
+            <div class="cmp2-body">
+              <p><strong style="color:var(--text)">場所</strong>：⚙ 設定 → フェイズ編集（上記手順）</p>
+              <p><strong style="color:var(--text)">項目</strong>：このフェイズに切り替えたときの動作</p>
+              <p>フェイズタブをクリックした瞬間（フェイズ1→フェイズ2 など）に BGM をどう扱うか。</p>
+            </div>
+          </div>
+          <div class="cmp2-card">
+            <div class="cmp2-hd a">🎵 同フェイズ内のトラック切替</div>
+            <div class="cmp2-body">
+              <p><strong style="color:var(--text)">場所</strong>：BGM パネルの各トラックカード右側</p>
+              <p><strong style="color:var(--text)">項目</strong>：<span class="ui" style="font-size:10px">⚡即</span> <span class="ui" style="font-size:10px">↓フェード</span> <span class="ui" style="font-size:10px">⇌クロス</span></p>
+              <p>同じフェイズ内で再生中に別のトラックを選んだときの切り替え方。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         Section 5: Now Playing バー
+    ───────────────────────────────────────── -->
+    <section class="section" id="now-playing">
+      <div class="section-eye">リファレンス — UI</div>
+      <h2>Now Playing バー</h2>
+      <p>BGM 再生中は BGM パネルの最上部に Now Playing バーが表示されます。どのフェイズを表示していても「今流れている曲」を確認できます。</p>
+
+      <div class="np-mock">
+        <div class="np-bars">
+          <div class="np-bar"></div>
+          <div class="np-bar"></div>
+          <div class="np-bar"></div>
+        </div>
+        <div class="np-name">調査フェイズ BGM.mp3</div>
+        <div class="np-controls">
+          <div class="np-btn y">↓ フェード</div>
+          <div class="np-btn r">■ 停止</div>
+        </div>
+      </div>
+
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:8px">
+        <li style="display:flex;gap:12px;font-size:13px">
+          <span class="ui yellow" style="flex-shrink:0">↓ フェード</span>
+          <span style="color:var(--text-dim)">約3秒かけてフェードアウトして停止します。</span>
+        </li>
+        <li style="display:flex;gap:12px;font-size:13px">
+          <span class="ui red" style="flex-shrink:0">■ 停止</span>
+          <span style="color:var(--text-dim)">即座に停止します。</span>
+        </li>
+      </ul>
+
+      <p style="margin-top:16px">再生中のトラックが現在のフェイズの BGM リストに含まれている場合、そのトラックカードが緑でハイライトされ、▶ ボタンが ■ に変わります。</p>
+
+      <p>音量スライダーはリアルタイムに反映されます。フェードアウト中の曲には適用されません。</p>
+    </section>
+
+    <!-- ─────────────────────────────────────────
+         Section 6: トラブルシューティング
+    ───────────────────────────────────────── -->
+    <section class="section" id="trouble">
+      <div class="section-eye">リファレンス — FAQ</div>
+      <h2>トラブルシューティング</h2>
+
+      <div class="card" style="margin-bottom:10px">
+        <h3>🔇 再生ボタンを押しても音が出ない</h3>
+        <p>ブラウザはページ読み込み直後の自動再生を制限します。<strong>ページを開いた後、一度どこかをクリックしてから</strong>再生ボタンを押してください。</p>
+        <p>それでも出ない場合、アドレスバー横の 🔒 アイコン → 「サウンド」→「許可」に変更してください。</p>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <h3>☁ ファイル一覧が表示されない</h3>
+        <p>Google Drive に接続できていない可能性があります。<span class="ui">⚙ 設定 → Google Drive</span> タブで接続状態を確認してください。アクセストークンは一定時間で期限切れになります。その場合は再接続してください。</p>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <h3>🌐 file:// で開くと動かない</h3>
+        <p>Google Drive API は <code style="font-family:'Courier New',monospace;font-size:12px">file://</code> プロトコルでは動作しません。プロジェクトフォルダをローカルサーバーで起動してください。</p>
+        <div class="code-block">python -m http.server 8000</div>
+        <p>起動後、<code style="font-family:'Courier New',monospace;font-size:12px">http://localhost:8000</code> をブラウザで開いてください。</p>
+      </div>
+
+      <div class="card warn">
+        <h3>⏳ フェードが終わらない・次の曲が始まらない</h3>
+        <p>「フェード → 再生」モードでは、前の曲が完全にフェードアウト（約3秒）してから次の曲が始まります。すぐに切り替えたい場合は <span class="ui">⚡ 即</span> または <span class="ui">⇌ クロス</span> モードを使ってください。</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// ── Sidebar active link (IntersectionObserver) ──
+(function () {
+  const links = Array.from(document.querySelectorAll('.sidebar-nav a'));
+  const targets = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = '#' + e.target.id;
+        links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === id));
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px' });
+
+  targets.forEach(t => io.observe(t));
+})();
+
+// ── Waveform Demo ──
+(function () {
+  const canvas = document.getElementById('demo-canvas');
+  const ctx    = canvas.getContext('2d');
+  const DPR    = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    const w = canvas.parentElement.clientWidth - 40;
+    canvas.width  = w * DPR;
+    canvas.height = 140 * DPR;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = '140px';
+  }
+
+  // Deterministic bar seeds (no Math.random so layout is stable)
+  function makeSeeds(n, offset) {
+    return Array.from({ length: n }, (_, i) => ({
+      phase: i * 0.58 + offset,
+      speed: 1.3 + (i % 5) * 0.42,
+      base:  0.28 + ((i * 7 + 11) % 12) / 28
+    }));
+  }
+
+  const T = {
+    a: { gain: 1, target: 1, lerpK: 0.05, color: '#3ecf8e', label: 'Track A', seeds: makeSeeds(14, 0.0) },
+    b: { gain: 0, target: 0, lerpK: 0.05, color: '#c84b6e', label: 'Track B', seeds: makeSeeds(14, 1.9) }
+  };
+
+  let time = 0;
+
+  function lerp(a, b, k) { return a + (b - a) * k; }
+
+  function drawTrack(tr, yOff, rowH) {
+    const N  = tr.seeds.length;
+    const W  = canvas.width;
+    const iW = W * 0.8;
+    const sx = W * 0.1;
+    const bw = iW / N;
+    const gp = bw * 0.4;
+    const g  = Math.max(0, Math.min(1, tr.gain));
+
+    // Label
+    ctx.font      = (9.5 * DPR) + "px 'Courier New', monospace";
+    ctx.fillStyle = g > 0.12 ? tr.color : '#3a3a58';
+    ctx.globalAlpha = 1;
+    ctx.fillText(tr.label, sx, yOff + 13 * DPR);
+
+    // Bars
+    const cy   = yOff + rowH * 0.64;
+    const maxH = rowH * 0.52;
+
+    for (let i = 0; i < N; i++) {
+      const s  = tr.seeds[i];
+      const w  = Math.abs(Math.sin(time * s.speed + s.phase));
+      const bh = Math.max(2 * DPR, w * s.base * maxH * g);
+      const x  = sx + i * bw + gp / 2;
+
+      ctx.fillStyle   = tr.color;
+      ctx.globalAlpha = Math.max(0.05, g * 0.88);
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, cy - bh / 2, bw - gp, bh, 2 * DPR);
+      } else {
+        ctx.rect(x, cy - bh / 2, bw - gp, bh);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawDivider(y) {
+    ctx.strokeStyle = '#2a2a50';
+    ctx.lineWidth   = 1 * DPR;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width * 0.06, y);
+    ctx.lineTo(canvas.width * 0.94, y);
+    ctx.stroke();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    T.a.gain = lerp(T.a.gain, T.a.target, T.a.lerpK);
+    T.b.gain = lerp(T.b.gain, T.b.target, T.b.lerpK);
+
+    const rowH = canvas.height / 2;
+    drawTrack(T.a, 0,    rowH);
+    drawDivider(rowH);
+    drawTrack(T.b, rowH, rowH);
+
+    time += 0.038;
+    requestAnimationFrame(draw);
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(draw);
+
+  // Status UI
+  const dotA = document.getElementById('dot-a');
+  const dotB = document.getElementById('dot-b');
+  const lblA = document.getElementById('lbl-a');
+  const lblB = document.getElementById('lbl-b');
+
+  function setStatus(a, b) {
+    const cls = { play: 'on-play', fade: 'on-fade', stop: 'on-stop', idle: '' };
+    dotA.className = 'st-dot ' + (cls[a] || '');
+    dotB.className = 'st-dot ' + (cls[b] || '');
+    const nm = { play: '再生中', fade: 'フェードアウト中', stop: '停止', idle: '待機中' };
+    lblA.textContent = 'Track A — ' + (nm[a] || a);
+    lblB.textContent = 'Track B — ' + (nm[b] || b);
+  }
+
+  // Demo buttons
+  const btns = {
+    stop:  document.getElementById('dbtn-stop'),
+    fade:  document.getElementById('dbtn-fade'),
+    cross: document.getElementById('dbtn-cross')
+  };
+
+  let resetTm = null;
+
+  function clearActive() {
+    Object.values(btns).forEach(b => b.classList.remove('act'));
+  }
+
+  window.runDemo = function (mode) {
+    if (resetTm) { clearTimeout(resetTm); resetTm = null; }
+    clearActive();
+    btns[mode].classList.add('act');
+
+    // Snap back to initial state (A playing, B stopped)
+    T.a.gain = 1; T.a.target = 1; T.a.lerpK = 0.05;
+    T.b.gain = 0; T.b.target = 0; T.b.lerpK = 0.05;
+    setStatus('play', 'idle');
+
+    setTimeout(function () {
+      if (mode === 'stop') {
+        // Instant cut
+        T.a.lerpK = 1; T.b.lerpK = 1;
+        T.a.target = 0; T.b.target = 1;
+        setStatus('stop', 'play');
+
+      } else if (mode === 'fade') {
+        // A fades slowly, then B starts
+        T.a.lerpK = 0.022; T.b.lerpK = 1;
+        T.a.target = 0;
+        setStatus('fade', 'idle');
+        setTimeout(function () {
+          T.b.target = 1;
+          setStatus('stop', 'play');
+        }, 1500);
+
+      } else if (mode === 'cross') {
+        // Both simultaneously
+        T.a.lerpK = 0.022; T.b.lerpK = 0.022;
+        T.a.target = 0; T.b.target = 1;
+        setStatus('fade', 'play');
+        setTimeout(function () { setStatus('stop', 'play'); }, 1600);
+      }
+
+      // Auto-reset after demo
+      resetTm = setTimeout(function () {
+        clearActive();
+        T.a.lerpK = 0.04; T.b.lerpK = 0.04;
+        T.a.target = 1;   T.b.target = 0;
+        setStatus('play', 'idle');
+      }, 5000);
+
+    }, 220);
+  };
+})();
+</script>
+</body>
+</html>
