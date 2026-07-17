@@ -41,6 +41,38 @@
     #header h1 { font-size: 18px; color: var(--accent); white-space: nowrap; }
     #scenario-display { color: var(--text-dim); flex: 1; font-size: 13px; }
     .hdr-btn { display: flex; gap: 6px; }
+
+    /* ── Mode toggle ── */
+    #btn-mode {
+      font-weight: 700; font-size: 12px;
+      padding: 6px 16px; border-radius: 20px; border: 1px solid;
+    }
+    #btn-mode.mastering {
+      background: rgba(62,207,142,.12); color: var(--green); border-color: rgba(62,207,142,.4);
+    }
+    #btn-mode.live {
+      background: rgba(224,82,82,.1); color: var(--red); border-color: rgba(224,82,82,.45);
+      animation: live-pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes live-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(224,82,82,.35); }
+      50%      { box-shadow: 0 0 0 7px rgba(224,82,82,0); }
+    }
+    /* header border reflects mode */
+    #header { transition: border-bottom-color .4s; }
+    body.mode-live       #header { border-bottom-color: rgba(224,82,82,.45); }
+    body.mode-mastering  #header { border-bottom-color: rgba(62,207,142,.3); }
+    /* Mastering: disable all playback controls */
+    body.mode-mastering #btn-start,
+    body.mode-mastering #btn-pause,
+    body.mode-mastering .track-play-btn,
+    body.mode-mastering .sfx-btn { opacity: .35; pointer-events: none; }
+    body.mode-mastering #btn-np-stop,
+    body.mode-mastering #btn-np-fade { display: none; }
+    /* Live: hide settings */
+    body.mode-live #btn-settings { display: none; }
+    /* Live: phase tabs not draggable */
+    body.mode-live .phase-tab { cursor: default !important; }
     /* ── Buttons ── */
     button {
       cursor: pointer; border: none; border-radius: 6px;
@@ -70,6 +102,10 @@
     }
     .phase-tab:hover { color: var(--text); background: var(--accent-dim); }
     .phase-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .phase-tab[draggable="true"] { cursor: grab; }
+    .phase-tab.dragging { opacity: 0.35; cursor: grabbing; }
+    .phase-tab.drag-over-left  { box-shadow: -2px 0 0 0 var(--accent); }
+    .phase-tab.drag-over-right { box-shadow:  2px 0 0 0 var(--accent); }
     #phase-add-tab {
       padding: 9px 14px; background: transparent; color: var(--text-dim);
       border: none; font-size: 18px; flex-shrink: 0; border-radius: 0;
@@ -274,6 +310,7 @@
   <h1>🎭 GM ツール</h1>
   <div id="scenario-display">シナリオ未設定</div>
   <div class="hdr-btn">
+    <button id="btn-mode" class="mastering">📝 マスタリング</button>
     <button class="btn-ghost" id="btn-open-timer">📺 タイマー画面</button>
     <button class="btn-ghost" id="btn-settings">⚙ 設定</button>
     <a href="help-bgm.html" target="_blank"
@@ -485,18 +522,87 @@
       </button>
     </div>
 
-    <!-- Phase transition behavior -->
-    <div class="form-group" style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
-      <label class="form-label">このフェイズに切り替えたときの動作</label>
-      <select class="form-control" id="ph-phase-transition" onchange="onPhTransitionChange()">
-        <option value="maintain">再生を維持（次のフェイズでも操作可）</option>
-        <option value="fadeout">再生中のBGMをフェイドアウト</option>
-        <option value="fadeout-autoplay">フェイドアウト → BGMを自動演奏</option>
-        <option value="stop-autoplay">即停止 → BGMを自動演奏</option>
+    <!-- Timer start auto-play -->
+    <div class="form-group" style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px">
+      <label class="form-label">⏱ タイマー開始時の自動再生</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="ph-timer-bgm-on" onchange="onTimerBgmChange()"
+               style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer">
+        <label for="ph-timer-bgm-on" style="font-size:13px;cursor:pointer">タイマー開始と同時にBGMを自動再生する</label>
+      </div>
+      <div id="ph-timer-bgm-row" style="display:none;margin-top:8px">
+        <label class="form-label">再生するBGM</label>
+        <select class="form-control" id="ph-timer-bgm-idx"></select>
+      </div>
+    </div>
+
+    <!-- Timer stop action -->
+    <div class="form-group" style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px">
+      <label class="form-label">⏹ タイマー停止時の動作</label>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">タイマーが停止したとき（ゼロ到達・手動停止・リセット）、演奏中のBGMをどう扱うか</div>
+      <select class="form-control" id="ph-timer-stop-action">
+        <option value="nothing">なにもしない（デフォルト）</option>
+        <option value="fadeout">BGMをフェイドアウトで停止</option>
+        <option value="stop">BGMを停止</option>
       </select>
-      <div id="ph-autoplay-row" style="display:none;margin-top:8px">
-        <label class="form-label">自動演奏するBGM</label>
-        <select class="form-control" id="ph-autoplay-idx"></select>
+    </div>
+
+    <!-- Outgoing: when leaving this phase -->
+    <div class="form-group" style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px">
+      <label class="form-label">次のフェイズに行く時の動作</label>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">このフェイズから別のフェイズに切り替えるとき、演奏中のBGMをどう扱うか</div>
+      <select class="form-control" id="ph-outgoing-action">
+        <option value="maintain">演奏を維持する</option>
+        <option value="fadeout">フェイドアウトして停止</option>
+        <option value="stop">即座に停止</option>
+      </select>
+    </div>
+
+    <!-- Incoming: when arriving at this phase -->
+    <div class="form-group" style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
+      <label class="form-label">前のフェイズから来たときの動作</label>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">前のフェイズが「演奏を維持」の場合はこの設定を無視します</div>
+      <select class="form-control" id="ph-incoming-action" onchange="onIncomingChange()">
+        <option value="nothing">なにもしない（デフォルト）</option>
+        <option value="play-bgm">BGMを再生する</option>
+        <option value="play-video">動画ファイルを再生する</option>
+      </select>
+      <div id="ph-incoming-bgm-row" style="display:none;margin-top:8px">
+        <label class="form-label">再生するBGM</label>
+        <select class="form-control" id="ph-incoming-bgm-idx"></select>
+      </div>
+      <div id="ph-incoming-video-row" style="display:none;margin-top:8px">
+        <div style="margin-bottom:8px">
+          <label class="form-label">動画ファイル</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-ghost" style="font-size:12px;padding:4px 10px" onclick="openPicker('phase-video')">ファイルを選択</button>
+            <span id="ph-video-name" style="font-size:12px;color:var(--text-dim)">未選択</span>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <label class="form-label">再生サイズ</label>
+          <select class="form-control" id="ph-video-fullscreen">
+            <option value="0">ウィンドウで再生</option>
+            <option value="1">画面最大化で再生</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div>
+            <label class="form-label">開始位置（秒）</label>
+            <input type="number" class="form-control" id="ph-video-start" min="0" step="1" placeholder="0（先頭から）">
+          </div>
+          <div>
+            <label class="form-label">終了位置（秒）</label>
+            <input type="number" class="form-control" id="ph-video-end" min="0" step="1" placeholder="空白 = 最後まで">
+          </div>
+        </div>
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="ph-video-autoclose" checked
+                   style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer">
+            <span style="font-size:13px">動画終了時にウィンドウを閉じる</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -575,6 +681,7 @@
 // ═══════════════════════════════════════════════════════
 const S = {
   scenario: { name: '', phases: [] },
+  mode: 'mastering',    // 'mastering' | 'live'
   curPhase: -1,
   timer: { rem: 0, total: 0, state: 'stopped', iv: null },
   audio: {
@@ -594,6 +701,10 @@ try { S.bc = new BroadcastChannel('gm-timer'); } catch(e) {}
 
 // Temporary BGM list used while phase modal is open
 let phModalBgm = [];
+// Temporary video file ID used while phase modal is open
+let phModalVideoFileId = null;
+// Drag source index for tab reordering
+let dragSrcIdx = -1;
 // Temporary alarm used while phase modal is open
 let phModalAlarm = { fileId: null, fileName: null };
 
@@ -616,8 +727,18 @@ function migrate(scenario) {
       ph.bgm = [{ fileId: ph.bgm.fileId, name: ph.bgm.name, loop: true, transition: 'fade' }];
     }
     if (!ph.bgm) ph.bgm = [];
-    if (ph.phaseTransition === undefined) ph.phaseTransition = 'maintain';
-    if (ph.autoPlayBgmIndex === undefined) ph.autoPlayBgmIndex = 0;
+    if (ph.outgoingAction === undefined) ph.outgoingAction = 'maintain';
+    if (ph.incomingAction === undefined) ph.incomingAction = 'nothing';
+    if (ph.incomingBgmIdx === undefined) ph.incomingBgmIdx = 0;
+    if (ph.timerStartBgm === undefined) ph.timerStartBgm = false;
+    if (ph.timerStartBgmIdx === undefined) ph.timerStartBgmIdx = 0;
+    if (ph.timerStopAction === undefined) ph.timerStopAction = 'nothing';
+    if (ph.incomingVideoFileId === undefined) ph.incomingVideoFileId = null;
+    if (ph.incomingVideoFileName === undefined) ph.incomingVideoFileName = null;
+    if (ph.incomingVideoFullscreen === undefined) ph.incomingVideoFullscreen = false;
+    if (ph.incomingVideoAutoClose === undefined) ph.incomingVideoAutoClose = true;
+    if (ph.incomingVideoStart === undefined) ph.incomingVideoStart = 0;
+    if (ph.incomingVideoEnd === undefined) ph.incomingVideoEnd = null;
   });
   return scenario;
 }
@@ -657,6 +778,7 @@ function load() {
 // ═══════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   load();
+  applyMode();
   renderNav();
   renderScenarioDisplay();
   if (S.scenario.phases.length > 0) selectPhase(0);
@@ -669,6 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Bindings
 // ═══════════════════════════════════════════════════════
 function bindAll() {
+  qs('#btn-mode').onclick     = toggleMode;
   qs('#btn-open-timer').onclick = openTimerWin;
   qs('#btn-settings').onclick = () => openModal('ov-settings');
   qs('#btn-open-sub').onclick = openTimerWin;
@@ -751,33 +874,100 @@ function renderNav() {
     const btn = document.createElement('button');
     btn.className = 'phase-tab' + (i === S.curPhase ? ' active' : '');
     btn.textContent = ph.name || `フェイズ ${i+1}`;
+    btn.draggable = true;
+
     btn.onclick = () => selectPhase(i);
+
+    btn.addEventListener('dragstart', e => {
+      if (S.mode === 'live') { e.preventDefault(); return; }
+      dragSrcIdx = i;
+      btn.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    btn.addEventListener('dragend', () => {
+      btn.classList.remove('dragging');
+      qsa('.phase-tab').forEach(t => t.classList.remove('drag-over-left', 'drag-over-right'));
+      dragSrcIdx = -1;
+    });
+    btn.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (dragSrcIdx < 0 || dragSrcIdx === i) return;
+      const mid = btn.getBoundingClientRect().left + btn.offsetWidth / 2;
+      qsa('.phase-tab').forEach(t => t.classList.remove('drag-over-left', 'drag-over-right'));
+      btn.classList.add(e.clientX < mid ? 'drag-over-left' : 'drag-over-right');
+      e.dataTransfer.dropEffect = 'move';
+    });
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('drag-over-left', 'drag-over-right');
+    });
+    btn.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrcIdx < 0 || dragSrcIdx === i) return;
+      const mid = btn.getBoundingClientRect().left + btn.offsetWidth / 2;
+      const dropBefore = e.clientX < mid;
+
+      // Compute destination index (after removal of src)
+      let dest = dropBefore ? i : i + 1;
+      if (dragSrcIdx < dest) dest--;
+
+      // Reorder phases
+      const [moved] = S.scenario.phases.splice(dragSrcIdx, 1);
+      S.scenario.phases.splice(dest, 0, moved);
+
+      // Remap S.curPhase and audio.current.phaseIdx
+      S.curPhase = remapIdx(S.curPhase, dragSrcIdx, dest);
+      if (S.audio.current) S.audio.current.phaseIdx = remapIdx(S.audio.current.phaseIdx, dragSrcIdx, dest);
+
+      save();
+      renderNav();
+      renderBGMPanel();
+    });
+
     nav.insertBefore(btn, qs('#phase-add-tab'));
   });
+}
+
+// Remap a phase index after moving srcIdx → destIdx
+function remapIdx(idx, src, dest) {
+  if (idx === src) return dest;
+  if (src < dest) {
+    if (idx > src && idx <= dest) return idx - 1;
+  } else {
+    if (idx >= dest && idx < src) return idx + 1;
+  }
+  return idx;
 }
 
 function selectPhase(i) {
   if (i < 0 || i >= S.scenario.phases.length) return;
   timerClear();
 
-  // Set curPhase first so autoPlayPhase check passes
+  const prevIdx = S.curPhase;
   S.curPhase = i;
 
-  const destPhase = S.scenario.phases[i];
-  const phaseTrans = destPhase.phaseTransition || 'maintain';
+  const srcPh  = (prevIdx >= 0 && prevIdx < S.scenario.phases.length) ? S.scenario.phases[prevIdx] : null;
+  const destPh = S.scenario.phases[i];
 
-  if (S.audio.current) {
-    if (phaseTrans === 'fadeout') {
-      fadeAndStopCurrent(null);
-    } else if (phaseTrans === 'fadeout-autoplay') {
-      fadeAndStopCurrent(() => autoPlayPhase(i));
-    } else if (phaseTrans === 'stop-autoplay') {
+  const outgoing   = srcPh ? (srcPh.outgoingAction || 'maintain') : null;
+  const incoming   = destPh.incomingAction || 'nothing';
+  const inBgmIdx   = destPh.incomingBgmIdx  || 0;
+  const wantPlay   = incoming === 'play-bgm';
+  const wantVideo  = incoming === 'play-video';
+
+  if (S.mode === 'live') {
+    if (outgoing === null || outgoing === 'maintain') {
+      // No previous phase, or previous phase keeps BGM → ignore incoming
+    } else if (outgoing === 'fadeout') {
+      if (S.audio.current) {
+        fadeAndStopCurrent(wantPlay ? () => autoPlayPhase(i, inBgmIdx) : null);
+      } else if (wantPlay) {
+        autoPlayPhase(i, inBgmIdx);
+      }
+    } else if (outgoing === 'stop') {
       stopCurrent();
-      autoPlayPhase(i);
+      if (wantPlay) autoPlayPhase(i, inBgmIdx);
     }
-    // 'maintain' → do nothing
-  } else if (phaseTrans === 'fadeout-autoplay' || phaseTrans === 'stop-autoplay') {
-    autoPlayPhase(i);
+    if (wantVideo) sendVideoPlay(destPh);
   }
   const ph = S.scenario.phases[i];
 
@@ -796,12 +986,43 @@ function selectPhase(i) {
   broadcastTimer();
 }
 
-function autoPlayPhase(phaseIdx) {
+function autoPlayPhase(phaseIdx, trackIdx) {
   if (S.curPhase !== phaseIdx) return;
   const ph = S.scenario.phases[phaseIdx];
   if (!ph?.bgm?.length) return;
-  const idx = Math.min(ph.autoPlayBgmIndex || 0, ph.bgm.length - 1);
+  const idx = Math.min(trackIdx ?? 0, ph.bgm.length - 1);
   playTrack(phaseIdx, idx);
+}
+
+function sendVideoPlay(ph) {
+  if (!ph.incomingVideoFileId) {
+    notify('動画ファイルが設定されていません', 'err');
+    return;
+  }
+  const apiKey = S.drive.apiKey || '';
+  const p = new URLSearchParams({
+    v:   '1',
+    fid: ph.incomingVideoFileId,
+    key: apiKey,
+    fs:  ph.incomingVideoFullscreen ? '1' : '0',
+    ac:  ph.incomingVideoAutoClose !== false ? '1' : '0',
+    st:  ph.incomingVideoStart || 0,
+    et:  ph.incomingVideoEnd != null ? ph.incomingVideoEnd : ''
+  });
+  const videoPageUrl = `timer-window.html?${p}`;
+  if (ph.incomingVideoFullscreen && S.subWin && !S.subWin.closed) {
+    S.subWin.close();
+    S.subWin = null;
+  }
+  const winFeatures = ph.incomingVideoFullscreen
+    ? `left=0,top=0,width=${screen.availWidth},height=${screen.availHeight},resizable=yes`
+    : 'width=960,height=600,resizable=yes';
+  if (!S.subWin || S.subWin.closed) {
+    S.subWin = window.open(videoPageUrl, 'gm-timer-win', winFeatures);
+  } else {
+    S.subWin.location.href = videoPageUrl;
+  }
+  S.subWin?.focus();
 }
 
 function getCur() {
@@ -827,6 +1048,7 @@ function updateTimerUI() {
 }
 
 function timerStart() {
+  if (S.mode === 'mastering') return;
   if (S.timer.rem === 0 || S.timer.state === 'running') return;
   S.timer.state = 'running';
   S.timer.iv = setInterval(() => {
@@ -835,24 +1057,66 @@ function timerStart() {
     if (S.timer.rem === 0) {
       timerClear(); S.timer.state = 'stopped'; updateTimerUI();
       notify('⏰ タイマーが終了しました', 'ok');
+      applyTimerStopAction();
       playAlarm();
     }
   }, 1000);
   updateTimerUI();
+  const ph = getCur();
+  if (ph?.timerStartBgm && ph.bgm?.length) {
+    const idx = Math.min(ph.timerStartBgmIdx || 0, ph.bgm.length - 1);
+    playTrack(S.curPhase, idx);
+  }
+}
+function applyTimerStopAction() {
+  if (S.mode !== 'live') return;
+  const ph = getCur();
+  const action = ph?.timerStopAction || 'nothing';
+  if (action === 'fadeout') fadeAndStopCurrent(null);
+  else if (action === 'stop') stopCurrent();
 }
 function timerPause() {
   if (S.timer.state !== 'running') return;
   timerClear(); S.timer.state = 'paused'; updateTimerUI();
+  applyTimerStopAction();
 }
 function timerReset() {
+  const wasRunning = S.timer.state === 'running';
   timerClear(); S.timer.state = 'stopped';
   const ph = getCur();
   S.timer.rem = S.timer.total = ph ? (ph.durationMin||0)*60+(ph.durationSec||0) : S.timer.total;
   updateTimerUI();
+  if (wasRunning) applyTimerStopAction();
 }
 function timerClear() { if (S.timer.iv) { clearInterval(S.timer.iv); S.timer.iv = null; } }
 
+// ═══════════════════════════════════════════════════════
+// Mode (Mastering / Live)
+// ═══════════════════════════════════════════════════════
+function applyMode() {
+  const live = S.mode === 'live';
+  document.body.classList.toggle('mode-live',       live);
+  document.body.classList.toggle('mode-mastering', !live);
+  const btn = qs('#btn-mode');
+  btn.className   = live ? 'live' : 'mastering';
+  btn.textContent = live ? '🎭 本番モード' : '📝 マスタリング';
+}
+
+function toggleMode() {
+  if (S.mode === 'mastering') {
+    S.mode = 'live';
+  } else {
+    S.mode = 'mastering';
+    // Stop audio and timer when entering mastering
+    if (S.audio.current) fadeAndStopCurrent(null);
+    timerClear();
+    if (S.timer.state === 'running') { S.timer.state = 'stopped'; updateTimerUI(); }
+  }
+  applyMode();
+}
+
 async function playAlarm() {
+  if (S.mode === 'mastering') return;
   const ph = getCur();
   const fileId   = ph?.alarmFileId   || S.scenario.alarmFileId;
   const fileName = ph?.alarmFileName || S.scenario.alarmFileName;
@@ -937,6 +1201,7 @@ async function loadAudio(fileId) {
 
 // Called when a track's play/stop button is clicked
 async function trackPlayBtn(phaseIdx, trackIdx) {
+  if (S.mode === 'mastering') return;
   // Clicking the playing track → stop it
   if (S.audio.current &&
       S.audio.current.phaseIdx === phaseIdx &&
@@ -1085,7 +1350,8 @@ function removeBgmTrack(phaseIdx, trackIdx) {
   if (!phase?.bgm) return;
   if (S.audio.current?.phaseIdx === phaseIdx && S.audio.current?.trackIdx === trackIdx) stopCurrent();
   phase.bgm.splice(trackIdx, 1);
-  if (phase.autoPlayBgmIndex >= phase.bgm.length) phase.autoPlayBgmIndex = Math.max(0, phase.bgm.length - 1);
+  if (phase.incomingBgmIdx >= phase.bgm.length) phase.incomingBgmIdx = Math.max(0, phase.bgm.length - 1);
+  if (phase.timerStartBgmIdx >= phase.bgm.length) phase.timerStartBgmIdx = Math.max(0, phase.bgm.length - 1);
   save();
   renderBGMPanel();
 }
@@ -1167,6 +1433,7 @@ function renderSFX(ph) {
   });
 }
 async function sfxPlay(item, btn) {
+  if (S.mode === 'mastering') return;
   const ctx = audioCtx();
   if (ctx.state === 'suspended') await ctx.resume();
   if (!S.sfxBuf[item.fileId]) {
@@ -1264,8 +1531,8 @@ async function driveLoadFiles() {
   if (!S.drive.apiKey || !S.drive.folderId) return;
   qs('#file-list').innerHTML = '<div class="empty">読み込み中…</div>';
   try {
-    const q   = encodeURIComponent(`'${S.drive.folderId}' in parents and mimeType contains 'audio/'`);
-    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=200&orderBy=name&key=${encodeURIComponent(S.drive.apiKey)}`;
+    const q   = encodeURIComponent(`'${S.drive.folderId}' in parents and (mimeType contains 'audio/' or mimeType contains 'video/')`);
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)&pageSize=200&orderBy=name&key=${encodeURIComponent(S.drive.apiKey)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
@@ -1276,14 +1543,18 @@ async function driveLoadFiles() {
   }
 }
 
-function renderFileList(files) {
+function renderFileList(files, isVideo = false) {
   const list = qs('#file-list');
   list.innerHTML = '';
-  if (!files.length) { list.innerHTML = '<div class="empty">音声ファイルが見つかりません</div>'; return; }
+  if (!files.length) {
+    list.innerHTML = `<div class="empty">${isVideo ? '動画' : '音声'}ファイルが見つかりません</div>`;
+    return;
+  }
   files.forEach(f => {
     const el = document.createElement('div');
     el.className = 'file-item';
-    el.innerHTML = `<span>🎵</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(f.name)}</span>`;
+    const icon = f.mimeType?.startsWith('video/') ? '🎬' : '🎵';
+    el.innerHTML = `<span>${icon}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(f.name)}</span>`;
     el.dataset.id = f.id; el.dataset.name = f.name;
     el.onclick = () => {
       qsa('.file-item').forEach(x => x.classList.remove('selected'));
@@ -1297,18 +1568,23 @@ function renderFileList(files) {
 
 function filterFiles() {
   const q = qs('#in-file-search').value.toLowerCase();
-  renderFileList(S.drive.files.filter(f => f.name.toLowerCase().includes(q)));
+  renderFileList(pickerFiles().filter(f => f.name.toLowerCase().includes(q)), pickerIsVideo());
 }
 
 // ═══════════════════════════════════════════════════════
 // File Picker
 // ═══════════════════════════════════════════════════════
+function pickerIsVideo() { return S.picker.ctx === 'phase-video'; }
+function pickerFiles() {
+  const iv = pickerIsVideo();
+  return S.drive.files.filter(f => iv ? f.mimeType?.startsWith('video/') : f.mimeType?.startsWith('audio/'));
+}
 function openPicker(ctx) {
   if (!S.drive.ok) { notify('先にGoogle Driveに接続してください（設定 → Google Drive）', 'err'); return; }
   S.picker.ctx = ctx; S.picker.sel = null;
   qs('#btn-confirm-pick').disabled = true;
   qs('#in-file-search').value = '';
-  renderFileList(S.drive.files);
+  renderFileList(pickerFiles(), pickerIsVideo());
   openModal('ov-picker');
 }
 function pickerConfirm() {
@@ -1335,7 +1611,8 @@ function pickerConfirm() {
     if (!phModalBgm.find(x => x.fileId === f.fileId)) {
       phModalBgm.push({ fileId: f.fileId, name: f.name, loop: true, transition: 'fade' });
       renderPhModalBgmList();
-      updateAutoPlaySelect();
+      updateIncomingBgmSelect();
+      updateTimerBgmSelect();
     }
   } else if (ctx === 'phase-sfx') {
     phSFXAdd(f);
@@ -1347,6 +1624,9 @@ function pickerConfirm() {
   } else if (ctx === 'alarm-phase') {
     phModalAlarm = { fileId: f.fileId, fileName: f.name };
     renderPhModalAlarm();
+  } else if (ctx === 'phase-video') {
+    phModalVideoFileId = f.fileId;
+    qs('#ph-video-name').textContent = f.name;
   }
   closeModal('ov-picker');
 }
@@ -1363,12 +1643,25 @@ function phaseAddNew() {
   qs('#phase-modal-title').textContent = 'フェイズを追加';
   qs('#ph-name').value = '';
   qs('#ph-min').value = 10; qs('#ph-sec').value = 0;
-  qs('#ph-phase-transition').value = 'maintain';
-  qs('#ph-autoplay-row').style.display = 'none';
+  qs('#ph-outgoing-action').value = 'maintain';
+  qs('#ph-incoming-action').value = 'nothing';
+  qs('#ph-incoming-bgm-row').style.display = 'none';
+  qs('#ph-incoming-video-row').style.display = 'none';
+  qs('#ph-video-name').textContent = '未選択';
+  qs('#ph-video-fullscreen').value = '0';
+  qs('#ph-video-start').value = '';
+  qs('#ph-video-end').value = '';
+  qs('#ph-video-autoclose').checked = true;
+  phModalVideoFileId = null;
+  qs('#ph-timer-bgm-on').checked = false;
+  qs('#ph-timer-bgm-row').style.display = 'none';
+  qs('#ph-timer-stop-action').value = 'nothing';
   qs('#ph-sfx-list').innerHTML = '';
   qs('#ph-notes').value = '';
   qs('#ph-btn-delete').style.display = 'none';
   renderPhModalBgmList();
+  updateIncomingBgmSelect();
+  updateTimerBgmSelect();
   renderPhModalAlarm();
   openModal('ov-phase');
 }
@@ -1382,15 +1675,26 @@ function phaseEdit(i) {
   qs('#ph-name').value = ph.name || '';
   qs('#ph-min').value = ph.durationMin || 10;
   qs('#ph-sec').value = ph.durationSec || 0;
-  qs('#ph-phase-transition').value = ph.phaseTransition || 'maintain';
+  qs('#ph-outgoing-action').value = ph.outgoingAction || 'maintain';
+  qs('#ph-incoming-action').value = ph.incomingAction || 'nothing';
   qs('#ph-notes').value = ph.notes || '';
   qs('#ph-btn-delete').style.display = 'inline-block';
   const sfxList = qs('#ph-sfx-list'); sfxList.innerHTML = '';
   (ph.sfx || []).forEach(s => phSFXAdd(s));
+  qs('#ph-timer-bgm-on').checked = ph.timerStartBgm || false;
+  qs('#ph-timer-stop-action').value = ph.timerStopAction || 'nothing';
+  phModalVideoFileId = ph.incomingVideoFileId || null;
+  qs('#ph-video-name').textContent = ph.incomingVideoFileName || '未選択';
+  qs('#ph-video-fullscreen').value = ph.incomingVideoFullscreen ? '1' : '0';
+  qs('#ph-video-start').value = ph.incomingVideoStart || '';
+  qs('#ph-video-end').value   = ph.incomingVideoEnd   != null ? ph.incomingVideoEnd : '';
+  qs('#ph-video-autoclose').checked = ph.incomingVideoAutoClose !== false;
   renderPhModalBgmList();
+  updateIncomingBgmSelect(ph.incomingBgmIdx || 0);
+  updateTimerBgmSelect(ph.timerStartBgmIdx || 0);
   renderPhModalAlarm();
-  updateAutoPlaySelect();
-  onPhTransitionChange();
+  onIncomingChange();
+  onTimerBgmChange();
   openModal('ov-phase');
 }
 
@@ -1435,17 +1739,20 @@ function phModalMoveBgm(i, dir) {
   if (j < 0 || j >= phModalBgm.length) return;
   [phModalBgm[i], phModalBgm[j]] = [phModalBgm[j], phModalBgm[i]];
   renderPhModalBgmList();
-  updateAutoPlaySelect();
+  updateIncomingBgmSelect();
+  updateTimerBgmSelect();
 }
 function phModalRemoveBgm(i) {
   phModalBgm.splice(i, 1);
   renderPhModalBgmList();
-  updateAutoPlaySelect();
+  updateIncomingBgmSelect();
+  updateTimerBgmSelect();
 }
 
-function updateAutoPlaySelect() {
-  const sel = qs('#ph-autoplay-idx');
-  const prev = parseInt(sel.value) || 0;
+function _updateBgmSelect(selId, forceIdx) {
+  const sel = qs('#' + selId);
+  if (!sel) return;
+  const prev = forceIdx !== undefined ? forceIdx : (parseInt(sel.value) || 0);
   sel.innerHTML = '';
   phModalBgm.forEach((t, i) => {
     const opt = document.createElement('option');
@@ -1453,13 +1760,18 @@ function updateAutoPlaySelect() {
     opt.textContent = `${i+1}. ${t.name}`;
     sel.appendChild(opt);
   });
-  sel.value = Math.min(prev, phModalBgm.length - 1);
+  sel.value = Math.min(prev, Math.max(0, phModalBgm.length - 1));
 }
+function updateIncomingBgmSelect(forceIdx) { _updateBgmSelect('ph-incoming-bgm-idx', forceIdx); }
+function updateTimerBgmSelect(forceIdx)    { _updateBgmSelect('ph-timer-bgm-idx',    forceIdx); }
 
-function onPhTransitionChange() {
-  const v = qs('#ph-phase-transition').value;
-  qs('#ph-autoplay-row').style.display =
-    (v === 'fadeout-autoplay' || v === 'stop-autoplay') ? 'block' : 'none';
+function onIncomingChange() {
+  const v = qs('#ph-incoming-action').value;
+  qs('#ph-incoming-bgm-row').style.display   = v === 'play-bgm'   ? 'block' : 'none';
+  qs('#ph-incoming-video-row').style.display = v === 'play-video' ? 'block' : 'none';
+}
+function onTimerBgmChange() {
+  qs('#ph-timer-bgm-row').style.display = qs('#ph-timer-bgm-on').checked ? 'block' : 'none';
 }
 
 function phSFXAdd(sfx) {
@@ -1480,8 +1792,18 @@ function phaseSave() {
     durationMin: parseInt(qs('#ph-min').value) || 0,
     durationSec: parseInt(qs('#ph-sec').value) || 0,
     bgm: phModalBgm.map(t => ({ ...t })),
-    phaseTransition: qs('#ph-phase-transition').value,
-    autoPlayBgmIndex: parseInt(qs('#ph-autoplay-idx').value) || 0,
+    outgoingAction: qs('#ph-outgoing-action').value,
+    incomingAction: qs('#ph-incoming-action').value,
+    incomingBgmIdx: parseInt(qs('#ph-incoming-bgm-idx').value) || 0,
+    incomingVideoFileId: phModalVideoFileId || null,
+    incomingVideoFileName: phModalVideoFileId ? qs('#ph-video-name').textContent : null,
+    incomingVideoFullscreen: qs('#ph-video-fullscreen').value === '1',
+    incomingVideoStart: parseFloat(qs('#ph-video-start').value) || 0,
+    incomingVideoEnd:   qs('#ph-video-end').value !== '' ? parseFloat(qs('#ph-video-end').value) : null,
+    incomingVideoAutoClose: qs('#ph-video-autoclose').checked,
+    timerStartBgm: qs('#ph-timer-bgm-on').checked,
+    timerStartBgmIdx: parseInt(qs('#ph-timer-bgm-idx').value) || 0,
+    timerStopAction: qs('#ph-timer-stop-action').value,
     sfx,
     alarmFileId:   phModalAlarm.fileId   || null,
     alarmFileName: phModalAlarm.fileName || null,

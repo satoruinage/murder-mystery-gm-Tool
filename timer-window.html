@@ -78,9 +78,83 @@
       background: radial-gradient(ellipse at 50% 100%, rgba(62,207,142,0.04) 0%, transparent 60%);
       pointer-events: none;
     }
+
+    /* Video overlay */
+    #video-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #video-overlay.active { display: flex; }
+    #video-player {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      outline: none;
+      background: #000;
+    }
+    /* 全画面ボタン */
+    #btn-fullscreen {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 15px;
+      cursor: pointer;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+    #btn-fullscreen.show { display: block; }
+    #btn-fullscreen:hover { background: rgba(62,207,142,0.7); }
+    /* クリックで再生を促すオーバーレイ */
+    #play-prompt {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      cursor: pointer;
+      z-index: 5;
+    }
+    #play-prompt.show { display: flex; }
+    #play-prompt-btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(62,207,142,0.85);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      color: #fff;
+      backdrop-filter: blur(4px);
+    }
+    #play-prompt p { color: rgba(255,255,255,0.7); font-size: 14px; }
   </style>
 </head>
 <body>
+  <div id="video-overlay">
+    <video id="video-player" controls playsinline crossorigin="anonymous"></video>
+    <button id="btn-fullscreen" onclick="enterFullscreen()">🔲 全画面</button>
+    <div id="play-prompt" onclick="resumePlay()">
+      <button id="play-prompt-btn">▶</button>
+      <p>クリックして再生</p>
+    </div>
+  </div>
+
   <div id="phase-name">—</div>
   <div id="time">00:00</div>
   <div class="progress-wrap">
@@ -89,10 +163,10 @@
   <div id="status">待機中</div>
 
   <script>
-    const timeEl    = document.getElementById('time');
-    const phaseEl   = document.getElementById('phase-name');
+    const timeEl     = document.getElementById('time');
+    const phaseEl    = document.getElementById('phase-name');
     const progressEl = document.getElementById('progress');
-    const statusEl  = document.getElementById('status');
+    const statusEl   = document.getElementById('status');
 
     const STATUS = { running: '進行中', paused: '一時停止', stopped: '停止中' };
     const COLOR  = { running: '#3ecf8e', paused: '#f5a623', stopped: '#e05252' };
@@ -100,25 +174,114 @@
     function update({ rem, total, state, phase }) {
       const m = Math.floor(rem / 60), s = rem % 60;
       timeEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-
       phaseEl.textContent = phase || '—';
-
       const cls = state === 'running' ? 'running'
                 : state === 'paused'  ? 'paused'
                 : (rem === 0 && total > 0) ? 'finished' : '';
       timeEl.className = cls;
-
       const pct = total > 0 ? (rem / total) * 100 : 100;
       progressEl.style.width = pct + '%';
       progressEl.style.background = COLOR[state] || '#fff';
-
       statusEl.textContent = STATUS[state] || '待機中';
     }
 
-    // BroadcastChannel (primary)
+    const videoOverlay  = document.getElementById('video-overlay');
+    const videoPlayer   = document.getElementById('video-player');
+    const playPrompt    = document.getElementById('play-prompt');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    let _endTime = null;
+    let _autoClose = false;
+    let _fsTimer = null;
+
+    function enterFullscreen() {
+      document.documentElement.requestFullscreen().catch(() => {});
+      btnFullscreen.classList.remove('show');
+      clearTimeout(_fsTimer);
+    }
+
+    function showFullscreenBtn() {
+      btnFullscreen.classList.add('show');
+      clearTimeout(_fsTimer);
+      _fsTimer = setTimeout(() => btnFullscreen.classList.remove('show'), 5000);
+    }
+
+    function resumePlay() {
+      playPrompt.classList.remove('show');
+      videoPlayer.play().catch(() => {});
+    }
+
+    function closeVideo() {
+      videoPlayer.pause();
+      videoPlayer.src = '';
+      videoPlayer.onended = null;
+      videoPlayer.ontimeupdate = null;
+      videoOverlay.classList.remove('active');
+      playPrompt.classList.remove('show');
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+
+    function handleVideoEnd() {
+      videoPlayer.onended = null;
+      videoPlayer.ontimeupdate = null;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      if (_autoClose) window.close();
+      else closeVideo();
+    }
+
+    function playVideo({ url, fullscreen, autoClose, startTime = 0, endTime = null }) {
+      _autoClose = autoClose;
+      _endTime   = endTime;
+
+      videoPlayer.onended     = null;
+      videoPlayer.ontimeupdate = null;
+      videoPlayer.src = url;
+      videoOverlay.classList.add('active');
+      playPrompt.classList.remove('show');
+
+      videoPlayer.onloadedmetadata = () => {
+        if (startTime > 0) videoPlayer.currentTime = startTime;
+      };
+
+      if (endTime != null) {
+        videoPlayer.ontimeupdate = () => {
+          if (videoPlayer.currentTime >= endTime) handleVideoEnd();
+        };
+      }
+      videoPlayer.onended = handleVideoEnd;
+
+      videoPlayer.play().catch(() => {
+        playPrompt.classList.add('show');
+      });
+      if (fullscreen) showFullscreenBtn();
+    }
+
+    // URLパラメータから動画情報を読んで即再生（新規ウィンドウ起動時）
+    (function() {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get('v') === '1' && p.get('fid') && p.get('key')) {
+        const fullscreen = p.get('fs') === '1';
+        const url = `https://www.googleapis.com/drive/v3/files/${p.get('fid')}?alt=media&key=${encodeURIComponent(p.get('key'))}`;
+        playVideo({
+          url,
+          fullscreen,
+          autoClose:  p.get('ac') === '1',
+          startTime:  parseFloat(p.get('st')) || 0,
+          endTime:    p.get('et') ? parseFloat(p.get('et')) : null
+        });
+      }
+    })();
+
+    // window.postMessage（メイン画面から直接送られる動画再生指示）
+    window.addEventListener('message', e => {
+      if (e.data?.type === 'play-video') playVideo(e.data);
+    });
+
+    // BroadcastChannel（タイマー更新）
     try {
       const bc = new BroadcastChannel('gm-timer');
-      bc.onmessage = e => { if (e.data?.type === 'update') update(e.data); };
+      bc.onmessage = e => {
+        if (e.data?.type === 'update') update(e.data);
+      };
     } catch(e) {}
   </script>
 </body>
