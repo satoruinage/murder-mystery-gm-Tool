@@ -488,26 +488,24 @@
     </div>
     <div class="mtab-content" id="t-audio">
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">
-        「🔊 選択…」を押すとブラウザのスピーカー選択ダイアログが開きます。<br>
-        個別BGMトラックの出力先は、フェイズ編集モーダルのBGMトラックカードで設定できます。
+        ① 「一覧を取得」を押してマイクへのアクセスを許可してください（スピーカー名の読み取りのみに使用し、録音は行いません）。<br>
+        ② 取得後、ドロップダウンから出力先を選択して「保存」してください。<br>
+        ③ 個別BGMトラックの出力先はフェイズ編集のBGMカードで設定できます。
+      </div>
+      <div style="margin-bottom:12px">
+        <button class="btn-ghost" onclick="pickOutputDevice()" style="font-size:12px">🔄 出力デバイス一覧を取得…</button>
       </div>
       <div class="form-group">
         <label class="form-label">BGM / SFX 出力デバイス（デフォルト）</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select class="form-control" id="sel-default-device" style="flex:1">
-            <option value="">システムデフォルト</option>
-          </select>
-          <button class="btn-ghost" onclick="pickOutputDevice('default')" style="font-size:12px;white-space:nowrap;flex-shrink:0">🔊 選択…</button>
-        </div>
+        <select class="form-control" id="sel-default-device">
+          <option value="">システムデフォルト</option>
+        </select>
       </div>
       <div class="form-group">
         <label class="form-label">動画 音声出力デバイス（タイマーウィンドウ）</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select class="form-control" id="sel-video-device" style="flex:1">
-            <option value="">システムデフォルト</option>
-          </select>
-          <button class="btn-ghost" onclick="pickOutputDevice('video')" style="font-size:12px;white-space:nowrap;flex-shrink:0">🔊 選択…</button>
-        </div>
+        <select class="form-control" id="sel-video-device">
+          <option value="">システムデフォルト</option>
+        </select>
       </div>
     </div>
     <div class="modal-ft">
@@ -623,12 +621,10 @@
         </div>
         <div style="margin-bottom:8px">
           <label class="form-label">音声出力デバイス</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <select class="form-control" id="ph-video-device" style="flex:1">
-              <option value="">グローバル設定に従う</option>
-            </select>
-            <button class="btn-ghost" onclick="pickOutputDevice('phase-video')" style="font-size:12px;white-space:nowrap;flex-shrink:0">🔊 選択…</button>
-          </div>
+          <select class="form-control" id="ph-video-device">
+            <option value="">グローバル設定に従う</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px">デバイス一覧は設定→音声デバイスタブの「一覧を取得」で更新できます</div>
         </div>
         <div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1276,47 +1272,34 @@ async function enumAudioDevices() {
   } catch(e) {}
 }
 
-// selectAudioOutput() でブラウザ標準ピッカーを開いてデバイスを選択
-async function pickOutputDevice(target) {
-  if (navigator.mediaDevices?.selectAudioOutput) {
-    // Chrome 102+ : ブラウザ標準の出力先ピッカー
-    try {
-      const device = await navigator.mediaDevices.selectAudioOutput();
-      const info = { deviceId: device.deviceId, label: device.label || device.deviceId };
-      if (!S.audio.devices.find(d => d.deviceId === info.deviceId)) {
-        S.audio.devices.push(info);
-        saveKnownDevices();
-      }
-      applyPickedDevice(target, info.deviceId);
-    } catch(e) {} // キャンセル時は何もしない
-  } else {
-    // フォールバック: getUserMedia でマイク許可を得て enumerateDevices を再試行
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop());
-      await enumAudioDevices();
-      notify('デバイス一覧を更新しました。ドロップダウンから選択してください', 'ok');
-    } catch(e) {
-      notify('このブラウザはデバイス選択に対応していません', 'err');
+// getUserMedia でマイク許可を得た後 enumerateDevices でラベル付き出力デバイスを取得
+async function pickOutputDevice() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    notify('このブラウザは音声デバイスの取得に対応していません', 'err');
+    return;
+  }
+  try {
+    // マイク許可を得ることで enumerateDevices がデバイス名を返すようになる
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop()); // 許可取得のみ、録音はしない
+    const all = await navigator.mediaDevices.enumerateDevices();
+    const outputs = all.filter(d => d.kind === 'audiooutput' && d.deviceId);
+    outputs.forEach(d => {
+      const ex = S.audio.devices.find(x => x.deviceId === d.deviceId);
+      if (ex) { if (d.label) ex.label = d.label; }
+      else S.audio.devices.push({ deviceId: d.deviceId, label: d.label || '不明なデバイス' });
+    });
+    saveKnownDevices();
+    renderAudioDeviceSelects();
+    renderVideoDeviceSelect(qs('#ph-video-device')?.value || '');
+    notify(outputs.length + ' 件の出力デバイスを取得しました。ドロップダウンから選択してください', 'ok');
+  } catch(e) {
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      notify('マイクの許可が必要です。アドレスバーの🔒→「マイク」→「許可」に変更してから再試行してください', 'err');
+    } else {
+      notify('デバイスの取得に失敗しました: ' + (e.message || e.name), 'err');
     }
   }
-}
-
-function applyPickedDevice(target, deviceId) {
-  if (target === 'default') {
-    S.outputPref.default = deviceId;
-    localStorage.setItem('gm_output_pref', JSON.stringify(S.outputPref));
-    if (S.audio.ctx?.setSinkId) S.audio.ctx.setSinkId(deviceId || 'default').catch(() => {});
-    renderAudioDeviceSelects();
-  } else if (target === 'video') {
-    S.outputPref.video = deviceId;
-    localStorage.setItem('gm_output_pref', JSON.stringify(S.outputPref));
-    renderAudioDeviceSelects();
-  } else if (target === 'phase-video') {
-    renderVideoDeviceSelect(deviceId);
-  }
-  const label = S.audio.devices.find(d => d.deviceId === deviceId)?.label || deviceId;
-  notify(`音声出力: ${label}`, 'ok');
 }
 
 function renderAudioDeviceSelects() {
