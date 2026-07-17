@@ -228,13 +228,16 @@
       else closeVideo();
     }
 
-    function playVideo({ url, fullscreen, autoClose, startTime = 0, endTime = null }) {
+    function playVideo({ url, fullscreen, autoClose, startTime = 0, endTime = null, videoDevice = '' }) {
       _autoClose = autoClose;
       _endTime   = endTime;
 
       videoPlayer.onended     = null;
       videoPlayer.ontimeupdate = null;
       videoPlayer.src = url;
+      if (videoDevice && videoPlayer.setSinkId) {
+        videoPlayer.setSinkId(videoDevice).catch(() => {});
+      }
       videoOverlay.classList.add('active');
       playPrompt.classList.remove('show');
 
@@ -260,13 +263,19 @@
       const p = new URLSearchParams(window.location.search);
       if (p.get('v') === '1' && p.get('fid') && p.get('key')) {
         const fullscreen = p.get('fs') === '1';
+        if (fullscreen) {
+          // このウィンドウが表示されているディスプレイ上で最大化
+          window.moveTo(screen.availLeft ?? 0, screen.availTop ?? 0);
+          window.resizeTo(screen.availWidth, screen.availHeight);
+        }
         const url = `https://www.googleapis.com/drive/v3/files/${p.get('fid')}?alt=media&key=${encodeURIComponent(p.get('key'))}`;
         playVideo({
           url,
           fullscreen,
-          autoClose:  p.get('ac') === '1',
-          startTime:  parseFloat(p.get('st')) || 0,
-          endTime:    p.get('et') ? parseFloat(p.get('et')) : null
+          autoClose:   p.get('ac') === '1',
+          startTime:   parseFloat(p.get('st')) || 0,
+          endTime:     p.get('et') ? parseFloat(p.get('et')) : null,
+          videoDevice: p.get('vd') || ''
         });
       }
     })();

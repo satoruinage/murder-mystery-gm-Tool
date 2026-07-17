@@ -417,6 +417,7 @@
     <div class="mtabs">
       <button class="mtab active" data-tab="t-scenario">シナリオ</button>
       <button class="mtab" data-tab="t-drive">Google Drive</button>
+      <button class="mtab" data-tab="t-audio">音声デバイス</button>
     </div>
     <div class="mtab-content active" id="t-scenario">
       <div class="form-group">
@@ -484,6 +485,25 @@
           ローカルでは <code>python -m http.server 8000</code> で起動してください。
         </div>
       </div>
+    </div>
+    <div class="mtab-content" id="t-audio">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+        音声の出力先デバイスを指定できます。デバイス一覧が空の場合は「デバイスを更新」を押してください。<br>
+        個別BGMトラックの出力先は、フェイズ編集モーダルのBGMトラックカードで設定できます。
+      </div>
+      <div class="form-group">
+        <label class="form-label">BGM / SFX 出力デバイス（デフォルト）</label>
+        <select class="form-control" id="sel-default-device">
+          <option value="">システムデフォルト</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">動画 音声出力デバイス（タイマーウィンドウ）</label>
+        <select class="form-control" id="sel-video-device">
+          <option value="">システムデフォルト</option>
+        </select>
+      </div>
+      <button class="btn-ghost" onclick="enumAudioDevices()" style="font-size:12px">🔄 デバイスを更新</button>
     </div>
     <div class="modal-ft">
       <button class="btn-ghost" data-close="ov-settings">閉じる</button>
@@ -686,10 +706,13 @@ const S = {
   timer: { rem: 0, total: 0, state: 'stopped', iv: null },
   audio: {
     ctx: null,
-    current: null,    // { src, gain, fileId, phaseIdx, trackIdx }
+    ctxMap: {},       // { deviceId: AudioContext } — per-device contexts
+    devices: [],      // MediaDeviceInfo[] for audiooutput
+    current: null,    // { src, gain, ctx, fileId, phaseIdx, trackIdx }
     fadingSrcs: [],   // [{ src, gain }] — sources being faded out
     buffers: {}       // fileId → AudioBuffer
   },
+  outputPref: { default: '', video: '' }, // audio output device IDs
   sfxBuf: {},
   drive: { ok: false, apiKey: null, folderId: null, folderName: null, files: [] },
   picker: { ctx: null, sel: null },
@@ -739,6 +762,9 @@ function migrate(scenario) {
     if (ph.incomingVideoAutoClose === undefined) ph.incomingVideoAutoClose = true;
     if (ph.incomingVideoStart === undefined) ph.incomingVideoStart = 0;
     if (ph.incomingVideoEnd === undefined) ph.incomingVideoEnd = null;
+    ph.bgm.forEach(t => {
+      if (t.audioOutput === undefined) t.audioOutput = '';
+    });
   });
   return scenario;
 }
@@ -770,6 +796,10 @@ function load() {
   try {
     const f = localStorage.getItem('gm_folder_meta');
     if (f) { const p = JSON.parse(f); S.drive.folderId = p.id; S.drive.folderName = p.name; }
+  } catch(e) {}
+  try {
+    const op = localStorage.getItem('gm_output_pref');
+    if (op) S.outputPref = { default: '', video: '', ...JSON.parse(op) };
   } catch(e) {}
 }
 
@@ -859,7 +889,10 @@ function bindAll() {
 // ═══════════════════════════════════════════════════════
 function openModal(id) {
   qs('#' + id).classList.remove('hidden');
-  if (id === 'ov-settings') { renderPhaseListEdit(); renderScenarioDisplay(); renderAlarmGlobal(); }
+  if (id === 'ov-settings') {
+    renderPhaseListEdit(); renderScenarioDisplay(); renderAlarmGlobal();
+    enumAudioDevices();
+  }
 }
 function closeModal(id) { qs('#' + id).classList.add('hidden'); }
 
@@ -1007,19 +1040,15 @@ function sendVideoPlay(ph) {
     fs:  ph.incomingVideoFullscreen ? '1' : '0',
     ac:  ph.incomingVideoAutoClose !== false ? '1' : '0',
     st:  ph.incomingVideoStart || 0,
-    et:  ph.incomingVideoEnd != null ? ph.incomingVideoEnd : ''
+    et:  ph.incomingVideoEnd != null ? ph.incomingVideoEnd : '',
+    vd:  S.outputPref.video || ''
   });
   const videoPageUrl = `timer-window.html?${p}`;
-  if (ph.incomingVideoFullscreen && S.subWin && !S.subWin.closed) {
-    S.subWin.close();
-    S.subWin = null;
-  }
-  const winFeatures = ph.incomingVideoFullscreen
-    ? `left=0,top=0,width=${screen.availWidth},height=${screen.availHeight},resizable=yes`
-    : 'width=960,height=600,resizable=yes';
   if (!S.subWin || S.subWin.closed) {
-    S.subWin = window.open(videoPageUrl, 'gm-timer-win', winFeatures);
+    S.subWin = window.open(videoPageUrl, 'gm-timer-win', 'width=960,height=600,resizable=yes');
   } else {
+    // ウィンドウを閉じずにナビゲート → 同じディスプレイに留まる
+    // フルスクリーン時はページ側で resizeTo して最大化する
     S.subWin.location.href = videoPageUrl;
   }
   S.subWin?.focus();
@@ -1183,8 +1212,58 @@ function openTimerWin() {
 // Audio Engine
 // ═══════════════════════════════════════════════════════
 function audioCtx() {
-  if (!S.audio.ctx) S.audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!S.audio.ctx) {
+    S.audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const devId = S.outputPref.default;
+    if (devId && S.audio.ctx.setSinkId) S.audio.ctx.setSinkId(devId).catch(() => {});
+  }
   return S.audio.ctx;
+}
+
+function audioCtxFor(deviceId) {
+  if (!deviceId) return audioCtx();
+  if (!S.audio.ctxMap[deviceId]) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.setSinkId) ctx.setSinkId(deviceId).catch(() => {});
+    S.audio.ctxMap[deviceId] = ctx;
+  }
+  const ctx = S.audio.ctxMap[deviceId];
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  return ctx;
+}
+
+async function enumAudioDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    S.audio.devices = all.filter(d => d.kind === 'audiooutput');
+    renderAudioDeviceSelects();
+  } catch(e) {}
+}
+
+function renderAudioDeviceSelects() {
+  const selDef = qs('#sel-default-device');
+  const selVid = qs('#sel-video-device');
+  if (!selDef && !selVid) return;
+  const makeOpts = (sel) => {
+    let h = `<option value="">システムデフォルト</option>`;
+    (S.audio.devices || []).forEach(d => {
+      const label = d.label || `デバイス (${d.deviceId.slice(0, 8)}…)`;
+      h += `<option value="${escHtml(d.deviceId)}"${d.deviceId === sel ? ' selected' : ''}>${escHtml(label)}</option>`;
+    });
+    return h;
+  };
+  if (selDef) selDef.innerHTML = makeOpts(S.outputPref.default || '');
+  if (selVid) selVid.innerHTML = makeOpts(S.outputPref.video   || '');
+}
+
+function deviceOptions(selected) {
+  let h = `<option value="">デフォルト</option>`;
+  (S.audio.devices || []).forEach(d => {
+    const label = d.label || `デバイス (${d.deviceId.slice(0, 8)}…)`;
+    h += `<option value="${escHtml(d.deviceId)}"${d.deviceId === selected ? ' selected' : ''}>${escHtml(label)}</option>`;
+  });
+  return h;
 }
 
 async function loadAudio(fileId) {
@@ -1218,7 +1297,9 @@ async function playTrack(phaseIdx, trackIdx) {
   const track = phase.bgm[trackIdx];
   if (!track.fileId) return;
 
-  const ctx = audioCtx();
+  // Resume the correct AudioContext for this track (user-gesture context)
+  const targetDeviceId = track.audioOutput || S.outputPref.default || '';
+  const ctx = targetDeviceId ? audioCtxFor(targetDeviceId) : audioCtx();
   if (ctx.state === 'suspended') await ctx.resume();
 
   if (!S.audio.buffers[track.fileId]) {
@@ -1254,7 +1335,9 @@ async function playTrack(phaseIdx, trackIdx) {
 }
 
 function startSource(buf, track, phaseIdx, trackIdx, fadeIn) {
-  const ctx = audioCtx();
+  const deviceId = track.audioOutput || S.outputPref.default || '';
+  const ctx = deviceId ? audioCtxFor(deviceId) : audioCtx();
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.loop = track.loop !== false;
@@ -1276,7 +1359,7 @@ function startSource(buf, track, phaseIdx, trackIdx, fadeIn) {
   }
 
   src.start(0);
-  S.audio.current = { src, gain, fileId: track.fileId, phaseIdx, trackIdx };
+  S.audio.current = { src, gain, ctx, fileId: track.fileId, phaseIdx, trackIdx };
 
   if (fadeIn) {
     let n = 0;
@@ -1609,7 +1692,7 @@ function pickerConfirm() {
     }
   } else if (ctx === 'phase-bgm-add') {
     if (!phModalBgm.find(x => x.fileId === f.fileId)) {
-      phModalBgm.push({ fileId: f.fileId, name: f.name, loop: true, transition: 'fade' });
+      phModalBgm.push({ fileId: f.fileId, name: f.name, loop: true, transition: 'fade', audioOutput: '' });
       renderPhModalBgmList();
       updateIncomingBgmSelect();
       updateTimerBgmSelect();
@@ -1721,6 +1804,9 @@ function renderPhModalBgmList() {
         <option value="fade"${trans==='fade'?' selected':''}>↓ フェード</option>
         <option value="crossfade"${trans==='crossfade'?' selected':''}>⇌ クロス</option>
       </select>
+      <select class="track-trans-sel" onchange="phModalSetDevice(${i},this.value)" title="音声出力デバイス" style="max-width:110px">
+        ${deviceOptions(track.audioOutput || '')}
+      </select>
       <button class="btn-ghost" onclick="phModalMoveBgm(${i},-1)" ${i===0?'disabled':''} title="上へ">↑</button>
       <button class="btn-ghost" onclick="phModalMoveBgm(${i},1)" ${i===phModalBgm.length-1?'disabled':''} title="下へ">↓</button>
       <button class="btn-ghost" onclick="phModalRemoveBgm(${i})" title="削除">✕</button>
@@ -1733,7 +1819,8 @@ function phModalToggleLoop(i) {
   phModalBgm[i].loop = phModalBgm[i].loop === false ? true : false;
   renderPhModalBgmList();
 }
-function phModalSetTrans(i, val) { phModalBgm[i].transition = val; }
+function phModalSetTrans(i, val)   { phModalBgm[i].transition = val; }
+function phModalSetDevice(i, val)  { if (phModalBgm[i]) phModalBgm[i].audioOutput = val; }
 function phModalMoveBgm(i, dir) {
   const j = i + dir;
   if (j < 0 || j >= phModalBgm.length) return;
@@ -1841,6 +1928,15 @@ function phaseDelete() {
 // ═══════════════════════════════════════════════════════
 function saveSettings() {
   S.scenario.name = qs('#in-scenario-name').value.trim();
+  const newDef = qs('#sel-default-device')?.value || '';
+  const newVid = qs('#sel-video-device')?.value   || '';
+  const defChanged = newDef !== S.outputPref.default;
+  S.outputPref.default = newDef;
+  S.outputPref.video   = newVid;
+  localStorage.setItem('gm_output_pref', JSON.stringify(S.outputPref));
+  if (defChanged && S.audio.ctx?.setSinkId) {
+    S.audio.ctx.setSinkId(newDef || 'default').catch(() => {});
+  }
   renderScenarioDisplay(); save(); closeModal('ov-settings');
   notify('設定を保存しました', 'ok');
 }
@@ -1885,7 +1981,16 @@ function saveNotes() {
 // Export / Import
 // ═══════════════════════════════════════════════════════
 function exportJSON() {
-  const b = new Blob([JSON.stringify(S.scenario, null, 2)], { type: 'application/json' });
+  const data = {
+    ...S.scenario,
+    _drive: {
+      apiKey:     S.drive.apiKey    || qs('#in-api-key').value.trim()    || '',
+      folderUrl:  qs('#in-folder-url').value.trim() || '',
+      folderId:   S.drive.folderId  || '',
+      folderName: S.drive.folderName || ''
+    }
+  };
+  const b = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);
   a.download = (S.scenario.name || 'scenario') + '.json';
@@ -1894,13 +1999,24 @@ function exportJSON() {
 function importJSON(e) {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = ev => {
+  r.onload = async ev => {
     try {
-      const d = migrate(JSON.parse(ev.target.result));
+      const raw = JSON.parse(ev.target.result);
+      // _drive を取り出し、シナリオ部分だけ migrate に渡す
+      const { _drive, ...scenarioOnly } = raw;
+      const d = migrate(scenarioOnly);
       if (!d.phases) throw new Error('phases がありません');
       S.scenario = d; save(); renderNav(); renderPhaseListEdit(); renderScenarioDisplay();
       if (d.phases.length) selectPhase(0);
-      notify('インポートしました', 'ok');
+      // Drive設定があれば復元して自動接続
+      if (_drive?.apiKey && _drive?.folderUrl) {
+        qs('#in-api-key').value    = _drive.apiKey;
+        qs('#in-folder-url').value = _drive.folderUrl;
+        await driveConnect();
+        notify('インポートしました（Drive設定も復元しました）', 'ok');
+      } else {
+        notify('インポートしました', 'ok');
+      }
     } catch(err) { notify('インポート失敗: ' + err.message, 'err'); }
   };
   r.readAsText(f); e.target.value = '';
