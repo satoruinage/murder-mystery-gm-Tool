@@ -1274,6 +1274,10 @@ async function enumAudioDevices() {
 
 // getUserMedia でマイク許可を得た後 enumerateDevices でラベル付き出力デバイスを取得
 async function pickOutputDevice() {
+  if (!window.isSecureContext) {
+    notify('HTTP環境では音声デバイス取得ができません。https://satoruinage.github.io/murder-mystery-gm-Tool/ を使用するか、ローカルをHTTPS化してください', 'err');
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) {
     notify('このブラウザは音声デバイスの取得に対応していません', 'err');
     return;
