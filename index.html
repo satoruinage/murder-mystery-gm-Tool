@@ -616,6 +616,12 @@
             <input type="number" class="form-control" id="ph-video-end" min="0" step="1" placeholder="空白 = 最後まで">
           </div>
         </div>
+        <div style="margin-bottom:8px">
+          <label class="form-label">音声出力デバイス</label>
+          <select class="form-control" id="ph-video-device">
+            <option value="">グローバル設定に従う</option>
+          </select>
+        </div>
         <div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="ph-video-autoclose" checked
@@ -762,6 +768,7 @@ function migrate(scenario) {
     if (ph.incomingVideoAutoClose === undefined) ph.incomingVideoAutoClose = true;
     if (ph.incomingVideoStart === undefined) ph.incomingVideoStart = 0;
     if (ph.incomingVideoEnd === undefined) ph.incomingVideoEnd = null;
+    if (ph.incomingVideoDevice === undefined) ph.incomingVideoDevice = '';
     ph.bgm.forEach(t => {
       if (t.audioOutput === undefined) t.audioOutput = '';
     });
@@ -1041,7 +1048,7 @@ function sendVideoPlay(ph) {
     ac:  ph.incomingVideoAutoClose !== false ? '1' : '0',
     st:  ph.incomingVideoStart || 0,
     et:  ph.incomingVideoEnd != null ? ph.incomingVideoEnd : '',
-    vd:  S.outputPref.video || ''
+    vd:  ph.incomingVideoDevice || S.outputPref.video || ''
   });
   const videoPageUrl = `timer-window.html?${p}`;
   if (!S.subWin || S.subWin.closed) {
@@ -1264,6 +1271,17 @@ function deviceOptions(selected) {
     h += `<option value="${escHtml(d.deviceId)}"${d.deviceId === selected ? ' selected' : ''}>${escHtml(label)}</option>`;
   });
   return h;
+}
+
+function renderVideoDeviceSelect(selected) {
+  const sel = qs('#ph-video-device');
+  if (!sel) return;
+  let h = `<option value="">グローバル設定に従う</option>`;
+  (S.audio.devices || []).forEach(d => {
+    const label = d.label || `デバイス (${d.deviceId.slice(0, 8)}…)`;
+    h += `<option value="${escHtml(d.deviceId)}"${d.deviceId === selected ? ' selected' : ''}>${escHtml(label)}</option>`;
+  });
+  sel.innerHTML = h;
 }
 
 async function loadAudio(fileId) {
@@ -1736,6 +1754,7 @@ function phaseAddNew() {
   qs('#ph-video-end').value = '';
   qs('#ph-video-autoclose').checked = true;
   phModalVideoFileId = null;
+  renderVideoDeviceSelect('');
   qs('#ph-timer-bgm-on').checked = false;
   qs('#ph-timer-bgm-row').style.display = 'none';
   qs('#ph-timer-stop-action').value = 'nothing';
@@ -1772,6 +1791,7 @@ function phaseEdit(i) {
   qs('#ph-video-start').value = ph.incomingVideoStart || '';
   qs('#ph-video-end').value   = ph.incomingVideoEnd   != null ? ph.incomingVideoEnd : '';
   qs('#ph-video-autoclose').checked = ph.incomingVideoAutoClose !== false;
+  renderVideoDeviceSelect(ph.incomingVideoDevice || '');
   renderPhModalBgmList();
   updateIncomingBgmSelect(ph.incomingBgmIdx || 0);
   updateTimerBgmSelect(ph.timerStartBgmIdx || 0);
@@ -1888,6 +1908,7 @@ function phaseSave() {
     incomingVideoStart: parseFloat(qs('#ph-video-start').value) || 0,
     incomingVideoEnd:   qs('#ph-video-end').value !== '' ? parseFloat(qs('#ph-video-end').value) : null,
     incomingVideoAutoClose: qs('#ph-video-autoclose').checked,
+    incomingVideoDevice: qs('#ph-video-device')?.value || '',
     timerStartBgm: qs('#ph-timer-bgm-on').checked,
     timerStartBgmIdx: parseInt(qs('#ph-timer-bgm-idx').value) || 0,
     timerStopAction: qs('#ph-timer-stop-action').value,
