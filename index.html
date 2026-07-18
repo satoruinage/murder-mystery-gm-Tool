@@ -306,6 +306,15 @@
     #np-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .np-btns { display: flex; gap: 5px; flex-shrink: 0; }
     .np-btns button { padding: 5px 9px; font-size: 12px; }
+    /* Now playing idle state (live mode, nothing playing) */
+    .now-playing.idle {
+      background: transparent;
+      border-color: var(--border);
+      box-shadow: none;
+    }
+    .now-playing.idle .np-viz .vbar { animation: none; height: 3px; }
+    .now-playing.idle #np-name { color: var(--text-dim); font-style: italic; }
+    .now-playing.idle .np-btns button { opacity: 0.2; pointer-events: none; }
     /* ── Volume ── */
     .vol-row { display: flex; align-items: center; gap: 10px; }
     .vol-row span { font-size: 11px; color: var(--text-dim); }
@@ -1398,6 +1407,7 @@ function applyMode() {
   const btn = qs('#btn-mode');
   btn.className   = live ? 'live' : 'mastering';
   btn.textContent = live ? '🎭 本番モード' : '📝 マスタリング';
+  renderNowPlaying();
 }
 
 function toggleMode() {
@@ -1811,8 +1821,18 @@ function renderBGMPanel() {
 
 function renderNowPlaying() {
   const np = qs('#now-playing');
-  if (!S.audio.current) { np.style.display = 'none'; return; }
+  if (!S.audio.current) {
+    if (S.mode === 'live') {
+      np.style.display = 'flex';
+      np.classList.add('idle');
+      qs('#np-name').textContent = '再生中のBGMなし';
+    } else {
+      np.style.display = 'none';
+    }
+    return;
+  }
   np.style.display = 'flex';
+  np.classList.remove('idle');
   const { phaseIdx, trackIdx } = S.audio.current;
   let name = '—';
   const t = S.scenario.phases[phaseIdx]?.bgm?.[trackIdx];
