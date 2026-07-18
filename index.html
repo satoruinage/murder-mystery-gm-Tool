@@ -213,6 +213,67 @@
     }
     .dur-row label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
     .dur-fields { display: flex; gap: 8px; align-items: center; }
+
+    /* ── Drum Picker (touch-friendly time selector) ── */
+    .drum-picker {
+      background: var(--bg-0);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      display: flex; align-items: center; gap: 4px; justify-content: center;
+      position: relative;
+    }
+    .drum-center-bar {
+      position: absolute;
+      left: 10px; right: 10px;
+      top: 50%; transform: translateY(-50%);
+      height: 46px;
+      background: var(--bg-2);
+      border: 1px solid var(--border-h);
+      border-radius: 8px;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset;
+    }
+    .drum-wrap {
+      position: relative;
+      width: 74px; height: 132px;
+      overflow: hidden;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+    .drum-wrap::before, .drum-wrap::after {
+      content: ''; position: absolute; left: 0; right: 0; height: 50px;
+      z-index: 2; pointer-events: none;
+    }
+    .drum-wrap::before { top: 0; background: linear-gradient(to bottom, var(--bg-0) 10%, transparent 100%); }
+    .drum-wrap::after  { bottom: 0; background: linear-gradient(to top, var(--bg-0) 10%, transparent 100%); }
+    .drum-scroll {
+      width: 100%; height: 100%;
+      overflow-y: scroll; scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .drum-scroll::-webkit-scrollbar { display: none; }
+    .drum-pad { height: 44px; display: block; }
+    .drum-item {
+      height: 44px; display: flex; align-items: center; justify-content: center;
+      font-size: 28px; font-family: 'Courier New', 'Consolas', monospace; font-weight: 700;
+      color: var(--text-dim); scroll-snap-align: center;
+      letter-spacing: 3px; user-select: none; -webkit-user-select: none;
+      transition: color .1s;
+    }
+    .drum-item.selected { color: var(--text); }
+    .drum-sep {
+      font-size: 24px; font-family: 'Courier New', monospace; font-weight: 700;
+      color: var(--text-mid); flex-shrink: 0; z-index: 2; padding-bottom: 2px;
+    }
+    /* Drum picker inside dur-row: match dur-row background for fades */
+    .dur-row .drum-wrap::before { background: linear-gradient(to bottom, var(--bg-0) 10%, transparent 100%); }
+    .dur-row .drum-wrap::after  { background: linear-gradient(to top,   var(--bg-0) 10%, transparent 100%); }
+    /* Drum picker inside form-group (modal): match bg-1 for fades */
+    .form-group .drum-picker { background: var(--bg-1); }
+    .form-group .drum-wrap::before { background: linear-gradient(to bottom, var(--bg-1) 10%, transparent 100%); }
+    .form-group .drum-wrap::after  { background: linear-gradient(to top,   var(--bg-1) 10%, transparent 100%); }
+    .form-group .drum-center-bar   { background: var(--bg-0); }
     input[type=number], input[type=text], textarea, select {
       background: var(--bg-0); border: 1px solid var(--border);
       color: var(--text); border-radius: 5px; padding: 10px 12px;
@@ -454,11 +515,15 @@
     </div>
     <div class="dur-row">
       <label>このフェイズの時間を変更</label>
-      <div class="dur-fields">
-        <input type="number" id="in-min" min="0" max="99" value="10"> 分
-        <input type="number" id="in-sec" min="0" max="59" value="0">  秒
-        <button class="btn-ghost" id="btn-apply" style="padding:6px 12px;font-size:12px">適用</button>
+      <div class="drum-picker">
+        <div class="drum-center-bar"></div>
+        <div class="drum-wrap"><div class="drum-scroll" id="drum-min-scroll"></div></div>
+        <span class="drum-sep">:</span>
+        <div class="drum-wrap"><div class="drum-scroll" id="drum-sec-scroll"></div></div>
+        <input type="number" id="in-min" style="display:none" value="10">
+        <input type="number" id="in-sec" style="display:none" value="0">
       </div>
+      <button class="btn-ghost" id="btn-apply" style="width:100%;margin-top:10px;min-height:48px;font-size:13px">タイマーに適用</button>
     </div>
     <button class="btn-ghost" id="btn-open-sub" style="width:100%;padding:10px;font-size:12px;letter-spacing:0.02em">
       📺 プレイヤー向けタイマーウィンドウを開く
@@ -642,9 +707,13 @@
 
     <div class="form-group">
       <label class="form-label">タイマー時間</label>
-      <div class="dur-fields">
-        <input type="number" id="ph-min" min="0" max="99" value="10"> 分
-        <input type="number" id="ph-sec" min="0" max="59" value="0">  秒
+      <div class="drum-picker">
+        <div class="drum-center-bar"></div>
+        <div class="drum-wrap"><div class="drum-scroll" id="drum-ph-min-scroll"></div></div>
+        <span class="drum-sep">:</span>
+        <div class="drum-wrap"><div class="drum-scroll" id="drum-ph-sec-scroll"></div></div>
+        <input type="number" id="ph-min" style="display:none" value="10">
+        <input type="number" id="ph-sec" style="display:none" value="0">
       </div>
     </div>
 
@@ -940,9 +1009,75 @@ document.addEventListener('DOMContentLoaded', () => {
   renderScenarioDisplay();
   if (S.scenario.phases.length > 0) selectPhase(0);
   bindAll();
+  initDrums();
   // Auto-reconnect if settings were saved previously
   if (S.drive.apiKey && S.drive.folderId) driveAutoReconnect();
 });
+
+// ═══════════════════════════════════════════════════════
+// Drum Picker — touch-friendly time input
+// ═══════════════════════════════════════════════════════
+const DRUM_H = 44;
+
+function buildDrumCol(scrollEl, count) {
+  const frag = document.createDocumentFragment();
+  const mkPad = () => Object.assign(document.createElement('div'), { className: 'drum-pad' });
+  frag.appendChild(mkPad());
+  for (let i = 0; i < count; i++) {
+    const d = Object.assign(document.createElement('div'), { className: 'drum-item' });
+    d.textContent = String(i).padStart(2, '0');
+    frag.appendChild(d);
+  }
+  frag.appendChild(mkPad());
+  scrollEl.innerHTML = '';
+  scrollEl.appendChild(frag);
+}
+
+function drumSetValue(scrollEl, value) {
+  if (!scrollEl) return;
+  scrollEl.scrollTop = Math.max(0, Math.round(value)) * DRUM_H;
+}
+
+function drumGetValue(scrollEl) {
+  return Math.round(scrollEl.scrollTop / DRUM_H);
+}
+
+function drumHighlight(scrollEl) {
+  const val = drumGetValue(scrollEl);
+  scrollEl.querySelectorAll('.drum-item').forEach((el, i) => {
+    el.classList.toggle('selected', i === val);
+  });
+}
+
+function initDrums() {
+  // Main panel
+  const minEl = qs('#drum-min-scroll');
+  const secEl = qs('#drum-sec-scroll');
+  buildDrumCol(minEl, 100);
+  buildDrumCol(secEl, 60);
+  drumSetValue(minEl, parseInt(qs('#in-min').value) || 10);
+  drumSetValue(secEl, parseInt(qs('#in-sec').value) || 0);
+  drumHighlight(minEl); drumHighlight(secEl);
+  minEl.addEventListener('scroll', () => { qs('#in-min').value = drumGetValue(minEl); drumHighlight(minEl); }, { passive: true });
+  secEl.addEventListener('scroll', () => { qs('#in-sec').value = drumGetValue(secEl); drumHighlight(secEl); }, { passive: true });
+
+  // Phase modal
+  const phMinEl = qs('#drum-ph-min-scroll');
+  const phSecEl = qs('#drum-ph-sec-scroll');
+  buildDrumCol(phMinEl, 100);
+  buildDrumCol(phSecEl, 60);
+  phMinEl.addEventListener('scroll', () => { qs('#ph-min').value = drumGetValue(phMinEl); drumHighlight(phMinEl); }, { passive: true });
+  phSecEl.addEventListener('scroll', () => { qs('#ph-sec').value = drumGetValue(phSecEl); drumHighlight(phSecEl); }, { passive: true });
+}
+
+function drumSyncPhaseModal(min, sec) {
+  const phMinEl = qs('#drum-ph-min-scroll');
+  const phSecEl = qs('#drum-ph-sec-scroll');
+  drumSetValue(phMinEl, min);
+  drumSetValue(phSecEl, sec);
+  drumHighlight(phMinEl);
+  drumHighlight(phSecEl);
+}
 
 // ═══════════════════════════════════════════════════════
 // Bindings
@@ -1135,6 +1270,10 @@ function selectPhase(i) {
   S.timer.rem = tot; S.timer.total = tot; S.timer.state = 'stopped';
   qs('#in-min').value = ph.durationMin || 10;
   qs('#in-sec').value = ph.durationSec || 0;
+  drumSetValue(qs('#drum-min-scroll'), ph.durationMin || 10);
+  drumSetValue(qs('#drum-sec-scroll'), ph.durationSec || 0);
+  drumHighlight(qs('#drum-min-scroll'));
+  drumHighlight(qs('#drum-sec-scroll'));
   updateTimerUI();
 
   renderBGMPanel();
@@ -1918,6 +2057,7 @@ function phaseAddNew() {
   qs('#ph-name').value = '';
   qs('#ph-min').value = 10; qs('#ph-sec').value = 0;
   qs('#ph-outgoing-action').value = 'maintain';
+
   qs('#ph-incoming-action').value = 'nothing';
   qs('#ph-incoming-bgm-row').style.display = 'none';
   qs('#ph-incoming-video-row').style.display = 'none';
@@ -1939,6 +2079,7 @@ function phaseAddNew() {
   updateTimerBgmSelect();
   renderPhModalAlarm();
   openModal('ov-phase');
+  drumSyncPhaseModal(10, 0);
 }
 
 function phaseEdit(i) {
@@ -1972,6 +2113,7 @@ function phaseEdit(i) {
   onIncomingChange();
   onTimerBgmChange();
   openModal('ov-phase');
+  drumSyncPhaseModal(ph.durationMin || 10, ph.durationSec || 0);
 }
 
 // Render BGM list inside the phase modal (uses phModalBgm)
