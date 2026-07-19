@@ -523,6 +523,12 @@
       font-size: 15px; font-weight: 600; color: var(--text);
     }
 
+    /* ── BGM card: prefetching state (background fetch in progress) ── */
+    .bgm-track-card.prefetching .track-play-btn {
+      animation: prefetch-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes prefetch-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.8; } }
+
     /* ── BGM card: loading state ── */
     .bgm-track-card.loading .track-play-btn,
     .bgm-track-card.loading .track-name::after {
@@ -1008,8 +1014,10 @@ const S = {
     devices: [],      // MediaDeviceInfo[] for audiooutput
     current: null,    // { src, gain, ctx, fileId, phaseIdx, trackIdx }
     fadingSrcs: [],   // [{ src, gain }] — sources being faded out
-    buffers: {},      // fileId → AudioBuffer
-    loadingKey: null  // 'phaseIdx-trackIdx' while a track is loading
+    buffers: {},        // fileId → AudioBuffer (decoded, ready to play)
+    rawBuffers: {},     // fileId → ArrayBuffer (fetched, not yet decoded)
+    loadingPromises: {},// fileId → Promise (in-flight prefetch)
+    loadingKey: null    // 'phaseIdx-trackIdx' while actively loading for playback
   },
   outputPref: { default: '', video: '' }, // audio output device IDs
   sfxBuf: {},
@@ -1391,6 +1399,10 @@ function selectPhase(i) {
   qsa('.phase-tab').forEach((t, idx) => t.classList.toggle('active', idx === i));
   qs('#timer-phase-label').textContent = ph.name || `フェイズ ${i+1}`;
   broadcastTimer();
+
+  // 現フェーズ＋次フェーズのBGMを事前フェッチ（再生時の遅延を排除）
+  preloadPhase(i);
+  if (i + 1 < S.scenario.phases.length) preloadPhase(i + 1);
 }
 
 function autoPlayPhase(phaseIdx, trackIdx) {
@@ -1704,16 +1716,60 @@ function renderVideoDeviceSelect(selected) {
   sel.innerHTML = h;
 }
 
-async function loadAudio(fileId) {
-  if (!S.drive.apiKey) { notify('先にGoogle Driveに接続してください（設定 → Google Drive）', 'err'); return null; }
+// バックグラウンドで音声ファイルをフェッチ（デコードはしない）
+function prefetchAudio(fileId) {
+  if (!fileId || !S.drive.apiKey) return;
+  if (S.audio.buffers[fileId] || S.audio.rawBuffers[fileId] || S.audio.loadingPromises[fileId]) return;
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(S.drive.apiKey)}`;
+  const p = fetch(url).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+    .then(ab => {
+      delete S.audio.loadingPromises[fileId];
+      if (ab && !S.audio.buffers[fileId]) { S.audio.rawBuffers[fileId] = ab; renderBGMPanel(); }
+    });
+  S.audio.loadingPromises[fileId] = p;
+}
+
+// フェーズ内の全BGM（＋アラーム）を事前フェッチ
+function preloadPhase(phaseIdx) {
+  const ph = S.scenario.phases[phaseIdx];
+  if (!ph) return;
+  (ph.bgm || []).forEach(t => { if (t.fileId) prefetchAudio(t.fileId); });
+  if (ph.alarmFileId) prefetchAudio(ph.alarmFileId);
+}
+
+async function loadAudio(fileId, silent = false) {
+  if (!S.drive.apiKey) {
+    if (!silent) notify('先にGoogle Driveに接続してください（設定 → Google Drive）', 'err');
+    return null;
+  }
   try {
-    const r = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(S.drive.apiKey)}`
-    );
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const buf = await r.arrayBuffer();
-    return await audioCtx().decodeAudioData(buf);
-  } catch(e) { notify('音声読み込みエラー: ' + e.message, 'err'); return null; }
+    let ab;
+    if (S.audio.rawBuffers[fileId]) {
+      // 事前フェッチ済み → デコードのみ（ネットワーク不要・高速）
+      ab = S.audio.rawBuffers[fileId].slice(0);
+    } else {
+      if (S.audio.loadingPromises[fileId]) {
+        // バックグラウンドフェッチ完了を待つ
+        await S.audio.loadingPromises[fileId];
+      }
+      if (S.audio.rawBuffers[fileId]) {
+        ab = S.audio.rawBuffers[fileId].slice(0);
+      } else {
+        // 事前フェッチなし → 通常フェッチ
+        const r = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(S.drive.apiKey)}`
+        );
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        ab = await r.arrayBuffer();
+      }
+    }
+    const decoded = await audioCtx().decodeAudioData(ab);
+    delete S.audio.rawBuffers[fileId]; // デコード済みのため生データは解放
+    return decoded;
+  } catch(e) {
+    if (!silent) notify('音声読み込みエラー: ' + e.message, 'err');
+    return null;
+  }
 }
 
 // Called when a track's play/stop button is clicked
@@ -1741,9 +1797,14 @@ async function playTrack(phaseIdx, trackIdx) {
   if (ctx.state === 'suspended') await ctx.resume();
 
   if (!S.audio.buffers[track.fileId]) {
-    S.audio.loadingKey = `${phaseIdx}-${trackIdx}`;
-    renderBGMPanel();
-    notify('読み込み中…');
+    const hasRaw = !!S.audio.rawBuffers[track.fileId];
+    const inFlight = !!S.audio.loadingPromises[track.fileId];
+    if (!hasRaw) {
+      // 未フェッチ、またはフェッチ中 → ローディング表示
+      S.audio.loadingKey = `${phaseIdx}-${trackIdx}`;
+      renderBGMPanel();
+      if (!inFlight) notify('読み込み中…');
+    }
     const buf = await loadAudio(track.fileId);
     S.audio.loadingKey = null;
     if (!buf) { renderBGMPanel(); return; }
@@ -1893,14 +1954,18 @@ function renderBGMPanel() {
   } else {
     ph.bgm.forEach((track, i) => {
       const isPlaying = S.audio.current?.phaseIdx === S.curPhase && S.audio.current?.trackIdx === i;
-      const isLoading = S.audio.loadingKey === `${S.curPhase}-${i}`;
+      const isLoading     = S.audio.loadingKey === `${S.curPhase}-${i}`;
+      const isPrefetching = !S.audio.buffers[track.fileId] &&
+                            !S.audio.rawBuffers?.[track.fileId] &&
+                            !!S.audio.loadingPromises?.[track.fileId];
       const loopOn = track.loop !== false;
       const trans  = track.transition || 'fade';
 
       const card = document.createElement('div');
       const classes = ['bgm-track-card'];
-      if (isPlaying) classes.push('active');
-      if (isLoading) classes.push('loading');
+      if (isPlaying)     classes.push('active');
+      if (isLoading)     classes.push('loading');
+      if (isPrefetching) classes.push('prefetching');
       card.className = classes.join(' ');
 
       // In live mode: entire card is the tap target
@@ -2025,6 +2090,9 @@ async function driveConnect() {
     updateDriveUI(true);
     await driveLoadFiles();
     notify(`「${d.name}」に接続しました`, 'ok');
+    // Drive接続後、現フェーズ＋次フェーズを事前フェッチ
+    preloadPhase(S.curPhase);
+    if (S.curPhase + 1 < S.scenario.phases.length) preloadPhase(S.curPhase + 1);
   } catch(e) {
     S.drive.ok = false;
     updateDriveUI(false);
@@ -2044,6 +2112,8 @@ async function driveAutoReconnect() {
     S.drive.ok = true;
     updateDriveUI(true);
     await driveLoadFiles();
+    preloadPhase(S.curPhase);
+    if (S.curPhase + 1 < S.scenario.phases.length) preloadPhase(S.curPhase + 1);
   } catch(e) {}
 }
 
