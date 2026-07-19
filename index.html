@@ -324,8 +324,16 @@
       border-radius: 2px; flex: 1; padding: 0;
     }
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
+      -webkit-appearance: none; width: 28px; height: 28px;
       background: var(--accent); border-radius: 50%; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(200,75,110,0.45);
+      transition: transform .15s;
+    }
+    input[type=range]::-webkit-slider-thumb:active { transform: scale(1.2); }
+    input[type=range]::-moz-range-thumb {
+      width: 28px; height: 28px;
+      background: var(--accent); border-radius: 50%; border: none; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(200,75,110,0.45);
     }
     /* ── BGM Track Cards ── */
     .bgm-track-card {
@@ -475,6 +483,74 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
 
+    /* ── Live mode: visual distinction ── */
+    #live-indicator {
+      display: none;
+      align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+      color: var(--red); white-space: nowrap;
+    }
+    #live-indicator .live-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--red);
+      animation: live-dot-blink 1.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @keyframes live-dot-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+    body.mode-live #live-indicator { display: flex; }
+    body.mode-live #header {
+      background: linear-gradient(90deg, var(--bg-1) 60%, rgba(224,82,82,0.08) 100%);
+    }
+    body.mode-live #main { border-top: 2px solid rgba(224,82,82,0.35); }
+
+    /* ── BGM card: live mode = full-card pad button ── */
+    body.mode-live .bgm-track-card {
+      cursor: pointer; min-height: 62px;
+      padding: 14px 16px; gap: 12px;
+      border-color: var(--border-h);
+      transition: background .1s, border-color .1s, transform .08s;
+    }
+    body.mode-live .bgm-track-card:active { transform: scale(0.98); }
+    body.mode-live .bgm-track-card.active {
+      border-color: rgba(62,207,142,.5);
+      background: linear-gradient(90deg, rgba(62,207,142,0.1), rgba(62,207,142,0.04));
+    }
+    body.mode-live .track-play-btn  { display: none; }
+    body.mode-live .track-loop-btn  { display: none; }
+    body.mode-live .track-trans-sel { display: none; }
+    body.mode-live .track-del-btn   { display: none; }
+    body.mode-live .track-name {
+      font-size: 15px; font-weight: 600; color: var(--text);
+    }
+
+    /* ── BGM card: loading state ── */
+    .bgm-track-card.loading .track-play-btn,
+    .bgm-track-card.loading .track-name::after {
+      /* spinner shown via pseudo on the card */
+    }
+    .bgm-track-card.loading {
+      position: relative; overflow: hidden;
+    }
+    .bgm-track-card.loading::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg,
+        transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: bgm-shimmer 1.2s ease-in-out infinite;
+    }
+    @keyframes bgm-shimmer {
+      0%   { background-position: -100% 0; }
+      100% { background-position:  200% 0; }
+    }
+    .bgm-track-card.loading .track-play-btn { opacity: 0; }
+    /* Loading spinner icon in live mode */
+    body.mode-live .bgm-track-card.loading .track-name::after {
+      content: ' ⋯';
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
     /* ── BGM panel: sticky top + scrollable area ── */
     #panel-bgm { padding: 0; overflow: hidden; gap: 0; }
     .bgm-sticky-top {
@@ -505,6 +581,7 @@
 <header id="header">
   <h1>🎭 GM ツール</h1>
   <div id="scenario-display">シナリオ未設定</div>
+  <div id="live-indicator"><span class="live-dot"></span>LIVE</div>
   <div class="hdr-btn">
     <button id="btn-mode" class="mastering">📝 マスタリング</button>
     <button class="btn-ghost" id="btn-open-timer" style="font-size:12px">📺 タイマー画面</button>
@@ -931,7 +1008,8 @@ const S = {
     devices: [],      // MediaDeviceInfo[] for audiooutput
     current: null,    // { src, gain, ctx, fileId, phaseIdx, trackIdx }
     fadingSrcs: [],   // [{ src, gain }] — sources being faded out
-    buffers: {}       // fileId → AudioBuffer
+    buffers: {},      // fileId → AudioBuffer
+    loadingKey: null  // 'phaseIdx-trackIdx' while a track is loading
   },
   outputPref: { default: '', video: '' }, // audio output device IDs
   sfxBuf: {},
@@ -1663,9 +1741,12 @@ async function playTrack(phaseIdx, trackIdx) {
   if (ctx.state === 'suspended') await ctx.resume();
 
   if (!S.audio.buffers[track.fileId]) {
+    S.audio.loadingKey = `${phaseIdx}-${trackIdx}`;
+    renderBGMPanel();
     notify('読み込み中…');
     const buf = await loadAudio(track.fileId);
-    if (!buf) return;
+    S.audio.loadingKey = null;
+    if (!buf) { renderBGMPanel(); return; }
     S.audio.buffers[track.fileId] = buf;
   }
 
@@ -1812,25 +1893,36 @@ function renderBGMPanel() {
   } else {
     ph.bgm.forEach((track, i) => {
       const isPlaying = S.audio.current?.phaseIdx === S.curPhase && S.audio.current?.trackIdx === i;
+      const isLoading = S.audio.loadingKey === `${S.curPhase}-${i}`;
       const loopOn = track.loop !== false;
       const trans  = track.transition || 'fade';
 
       const card = document.createElement('div');
-      card.className = 'bgm-track-card' + (isPlaying ? ' active' : '');
+      const classes = ['bgm-track-card'];
+      if (isPlaying) classes.push('active');
+      if (isLoading) classes.push('loading');
+      card.className = classes.join(' ');
+
+      // In live mode: entire card is the tap target
+      card.addEventListener('click', e => {
+        if (S.mode === 'live' && !S.audio.loadingKey) trackPlayBtn(S.curPhase, i);
+      });
+
       card.innerHTML = `
         <button class="track-play-btn${isPlaying ? ' active' : ''}"
-                onclick="trackPlayBtn(${S.curPhase},${i})"
-                title="${isPlaying ? '停止' : '再生'}">${isPlaying ? '■' : '▶'}</button>
+                onclick="if(S.mode!=='live'){trackPlayBtn(${S.curPhase},${i})}"
+                title="${isPlaying ? '停止' : '再生'}">${isLoading ? '…' : isPlaying ? '■' : '▶'}</button>
         <div class="track-name" title="${escHtml(track.name)}">${escHtml(track.name)}</div>
         <button class="track-loop-btn${loopOn ? ' on' : ''}"
-                onclick="toggleLoop(${S.curPhase},${i})"
+                onclick="event.stopPropagation();toggleLoop(${S.curPhase},${i})"
                 title="ループ: ${loopOn ? 'ON' : 'OFF'}">🔄</button>
-        <select class="track-trans-sel" onchange="setTransition(${S.curPhase},${i},this.value)" title="切替挙動">
+        <select class="track-trans-sel" onchange="setTransition(${S.curPhase},${i},this.value)" title="切替挙動"
+                onclick="event.stopPropagation()">
           <option value="stop"${trans==='stop'?' selected':''}>⚡ 即</option>
           <option value="fade"${trans==='fade'?' selected':''}>↓ フェード</option>
           <option value="crossfade"${trans==='crossfade'?' selected':''}>⇌ クロス</option>
         </select>
-        <button class="track-del-btn" onclick="removeBgmTrack(${S.curPhase},${i})" title="削除">✕</button>
+        <button class="track-del-btn" onclick="event.stopPropagation();removeBgmTrack(${S.curPhase},${i})" title="削除">✕</button>
       `;
       list.appendChild(card);
     });
